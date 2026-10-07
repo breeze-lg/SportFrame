@@ -1,0 +1,96 @@
+@font-face {
+  font-family: 'Newsreader';
+  src: url('/fonts/newsreader-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Newsreader';
+  src: url('/fonts/newsreader-400-italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/plex-mono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/plex-mono-500.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/plex-sans-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/plex-sans-600.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+
+  /* theme-agnostic — the artifact */
+  --mat: #FFFFFF;
+  --bevel-mat: rgba(28, 27, 24, .09);
+
+  --serif: 'Newsreader', Georgia, 'Songti SC', serif;
+  --sans: 'IBM Plex Sans', -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* light */
+  --wall: #E9E8E3;
+  --wall-hi: #F1F0EC;
+  --wall-lo: #E2E1DB;
+  --surface: #FFFFFF;
+  --bevel: #D6D4CD;
+  --rule: #EFEEE9;
+  --ink: #1C1B18;
+  --action-bg: #1C1B18;
+  --action-fg: #E9E8E3;
+  --body: #33312C;
+  --label: #3A3833;
+  --quiet: #7A776E;
+  --faint: #A9A69C;
+  --brass: #8A6A2F;
+  --brass-line: rgba(138, 106, 47, .34);
+  --brass-wash: rgba(138, 106, 47, .05);
+  --device: #EDECE7;
+  --device-line: #C9C7BE;
+  --lift: 0 1px 2px rgba(28, 27, 24, .05), 0 12px 28px -10px rgba(28, 27, 24, .20);
+  --deep: 0 2px 4px rgba(28, 27, 24, .06), 0 34px 64px -22px rgba(28, 27, 24, .34);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --wall: #191815;
+  --wall-hi: #232019;
+  --wall-lo: #121110;
+  --surface: #211F1C;
+  --bevel: #3A3833;
+  --rule: #2C2A26;
+  --ink: #EDEBE5;
+  --action-bg: #C9C5BB;
+  --action-fg: #191815;
+  --body: #C9C5BB;
+  --label: #B8B3A8;
+  --quiet: #8B877C;
+  --faint: #5E5A52;
+  --brass: #BE9A4A;
+  --brass-line: rgba(190, 154, 74, .36);
+  --brass-wash: rgba(190, 154, 74, .07);
+  --device: #26241F;
+  --device-line: #403D37;
+  --lift: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 28px -10px rgba(0, 0, 0, .7);
+  --deep: 0 2px 4px rgba(0, 0, 0, .6), 0 34px 64px -22px rgba(0, 0, 0, .85);
+}
