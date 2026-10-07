@@ -1,8 +1,9 @@
 # Golden pixel fixtures: raw RGBA bytes, compared byte for byte by
 # tests/pixel/templates.spec.ts. They must never be touched on the way in or
-# out — a CRLF checkout would make all 18 goldens mismatch for a reason that
+# out — a CRLF checkout would make all nine goldens mismatch for a reason that
 # has nothing to do with the renderer, and the suite's advice ("decide whether
 # this is a regression or a deliberate change") would be actively misleading.
-# (`**`, not a trailing slash: a directory pattern does not recurse in an
-# attributes file the way it does in .gitignore.)
+# Nine, not eighteen: one per template, and the dark leg of the suite renders
+# against the light golden. (`**`, not a trailing slash: a directory pattern
+# does not recurse in an attributes file the way it does in .gitignore.)
 tests/pixel/__screenshots__/** binary

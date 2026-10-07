@@ -260,6 +260,54 @@ paintRail(state.template?.id ?? null)
 draw()
 
 // ---------------------------------------------------------------------------
+// Demo affordance — user-facing, and not gated on ?dev=1.
+//
+// `?demo=1` puts a procedurally generated photograph on the wall so that
+// nobody has to find a file before they can see what the app does. It is the
+// product's own front door for a reviewer, a screenshot, or a first look — the
+// reason it is not behind the `?dev=1` block below, which exists to be
+// invisible to users.
+//
+// It lives at the foot of the module rather than beside `draw()` for one
+// reason: it calls `pick`, and `pick` reads `rail`, a `const` declared above.
+// Running earlier would be a temporal-dead-zone crash, not a race.
+//
+// The photo is `demo`-named and EXIF-less on purpose: the spec plate is the
+// one surface that must *not* appear unless real metadata is behind it, so the
+// demo is also the standing check that it stays absent.
+// ---------------------------------------------------------------------------
+if (new URLSearchParams(location.search).get('demo') === '1') {
+  const d = document.createElement('canvas')
+  d.width = 1400
+  d.height = 1050
+  const c = d.getContext('2d')
+  if (c) {
+    const g = c.createLinearGradient(0, 0, 1400, 1050)
+    g.addColorStop(0, '#c9531f')
+    g.addColorStop(0.45, '#e8a13c')
+    g.addColorStop(1, '#4a6b3a')
+    c.fillStyle = g
+    c.fillRect(0, 0, 1400, 1050)
+    for (let i = 0; i < 70; i++) {
+      c.fillStyle = `rgba(${(200 + Math.random() * 55) | 0},${(120 + Math.random() * 80) | 0},${(40 + Math.random() * 60) | 0},.5)`
+      c.beginPath()
+      c.arc(Math.random() * 1400, Math.random() * 600, 8 + Math.random() * 40, 0, 7)
+      c.fill()
+    }
+  }
+  const im = new Image()
+  im.onload = () => {
+    state.photo = { el: im, width: im.naturalWidth, height: im.naturalHeight, name: 'demo', exif: null }
+    state.exif = null
+    draw()
+  }
+  im.src = d.toDataURL()
+
+  const tplId = new URLSearchParams(location.search).get('tpl')
+  if (tplId && getTemplate(tplId)) pick(tplId)
+}
+
+// ---------------------------------------------------------------------------
 // Dev affordance — see spec §8. Enabled only with ?dev=1.
 //
 // All five handles are one block here: Tasks 4-9 each appended the slice its
