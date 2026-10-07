@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { TEMPLATES, validateTemplate, getTemplate } from '../../src/core/templates'
+import { fitRect, matRect, resolveSize } from '../../src/core/geometry'
 
 /** Takes a built-in off `TEMPLATES` (index 0 is `classic`), corrupts exactly
  *  one field, and returns the copy. Shared by every describe that needs a
@@ -30,6 +31,86 @@ describe('TEMPLATES', () => {
     expect(getTemplate('classic')?.name).toBe('经典')
     expect(getTemplate('nope')).toBeUndefined()
   })
+})
+
+/**
+ * The composition invariant: a template's mat has to lie inside the canvas it
+ * is mounted on.
+ *
+ * `fitRect` centres the photograph in the canvas at `scale` percent of it, and
+ * `matRect` grows that frame by `mat` on three sides and by `mat + matBottom`
+ * below. Those four numbers are authored independently in a template record and
+ * nothing in the data model ties them together, so the two can be written in a
+ * combination that cannot fit: 样张 shipped at `scale: 78` with the deepest mat
+ * in the set (86 + 150) and needed 2145px of canvas where the app renders 1440,
+ * putting the card's bottom edge — and, once Task 16 laid the plate out in that
+ * band, the plate — 78px below the poster. Nothing noticed for as long as the
+ * clipped strip stayed empty, which is exactly what a template's deepest margin
+ * normally is.
+ *
+ * So the guard is the general form of that bug rather than a pin on one
+ * template's numbers: every built-in is laid out at the size the app actually
+ * renders it, through the same `fitRect`/`matRect` the renderer uses (imported,
+ * not restated — a copy here could drift from the implementation and pass while
+ * the poster crops).
+ */
+describe('the mat fits the canvas it is mounted on', () => {
+  /**
+   * The app renders one canvas per template per scale: `resolveSize(ratio,
+   * state.longEdge)` with `state.longEdge` at its default 1440 — 1152×1440 for
+   * 样张 — as the `k = 1` preview the user is looking at and as the `k = 2` and
+   * `k = 4` export canvases, which are that geometry multiplied through. It is
+   * the only size the app produces, and the one the defect was visible at. The
+   * 480×600 the goldens are rendered at is a probe size the app never uses, and
+   * a mat of 236px cannot fit a 600px canvas at any scale that leaves a
+   * photograph on it — so it would answer a question nobody asked.
+   */
+  const LONG_EDGE = 1440
+
+  /** Float arithmetic, not a slack budget: the real margins here run from
+   *  样张's 8.8px to hundreds, so this only absorbs the last bit of a double. */
+  const EPS = 1e-9
+
+  for (const t of TEMPLATES) {
+    it(`${t.id}: the mat lies within the canvas`, () => {
+      const size = resolveSize(t.canvas.ratio, LONG_EDGE)
+      // The photo aspect that leaves the least room is the canvas's own.
+      // `fitRect` shrinks the frame to fit, so the frame is at its tallest when
+      // the photo is at least as tall as the canvas and at its widest when it
+      // is at least as wide; because it is centred, every margin is
+      // `(canvas - frame) / 2`. The canvas's own aspect is the one aspect that
+      // maxes both dimensions at once — any narrower photo relaxes the width,
+      // any wider one relaxes the height, and neither tightens the other. It is
+      // also the photo the app itself is handed for a fixed ratio, since
+      // `resolveSize` derives `size` from the same `aspectOf`. The sample
+      // fixture would *not* do: at 640×1074 it is taller than 4:5, so it leaves
+      // the horizontal margins — and any left/right overflow — untested.
+      const aspect = size.W / size.H
+      // k = 2 as well as k = 1: the arithmetic is scale-free today, and the
+      // export is the artifact nobody looks at again — if a later change ever
+      // rounds the layout box per scale, it is the export that crops first.
+      for (const k of [1, 2]) {
+        const box = { W: size.W * k, H: size.H * k }
+        const frame = fitRect(box, aspect, t.frame.scale, 0, 0)
+        const mat = matRect(frame, t.frame.mat, t.frame.matBottom, k)
+        const over = {
+          left: -mat.x,
+          top: -mat.y,
+          right: mat.x + mat.w - box.W,
+          bottom: mat.y + mat.h - box.H,
+        }
+        const worst = Math.max(over.left, over.top, over.right, over.bottom)
+        const px = (n: number) => `${n.toFixed(1)}px`
+        expect(
+          worst,
+          `${t.id} at k=${k}: the mat (${px(mat.w)}×${px(mat.h)} at ${px(mat.x)},${px(mat.y)}) ` +
+            `overflows the ${box.W}×${box.H} canvas — left ${px(over.left)}, top ${px(over.top)}, ` +
+            `right ${px(over.right)}, bottom ${px(over.bottom)}. ` +
+            `frame.scale ${t.frame.scale} + mat ${t.frame.mat} + matBottom ${t.frame.matBottom} cannot coexist.`,
+        ).toBeLessThanOrEqual(EPS)
+      }
+    })
+  }
 })
 
 describe('validateTemplate', () => {

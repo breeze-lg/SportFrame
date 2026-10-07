@@ -4,6 +4,7 @@ import { TEMPLATES, getTemplate } from './core/templates'
 import { drawMat, roundedRect } from './core/mat'
 import { drawBackground } from './core/background'
 import { drawText, measureToFit, frameFont } from './core/text'
+import { drawPlate, plateFields } from './core/plate'
 import { initTheme } from './ui/theme'
 import { createState } from './ui/state'
 import { toast } from './ui/toast'
@@ -273,6 +274,8 @@ if (new URLSearchParams(location.search).has('dev')) {
     frameFont,
     matRect,
     roundedRect,
+    drawPlate,
+    plateFields,
   }
   w.__frameTemplates = { TEMPLATES, getTemplate }
   w.__frameCeremony = { showCeremony }

@@ -202,7 +202,14 @@ export const TEMPLATES: Template[] = [
     layout: { kind: 'single' },
     canvas: { ratio: '4:5' },
     background: { mode: 'solid', color: '#FFFFFF' },
-    frame: { scale: 78, radius: 0, mat: 86, matBottom: 150, shadow: 0 },
+    // `scale` is not free: `matRect` grows the frame by `mat` on three sides and
+    // by `mat + matBottom` below, so the card fits its canvas only while
+    // `mat + matBottom ≤ H·(1 - scale/100)/2`. This template carries the deepest
+    // mat in the set (86 + 150 = 236) and at 78 needed 2145px of canvas where
+    // the app renders 1440 — its bottom edge, and the plate laid out in it, fell
+    // off the poster. 66 leaves 8.8px of slack at 1440 and keeps the mock's
+    // proportions; `tests/unit/templates.test.ts` is the guard that says so.
+    frame: { scale: 66, radius: 0, mat: 86, matBottom: 150, shadow: 0 },
     text: { anchor: 'mat', slots: [{ id: 'title', size: 24, weight: 400, color: '#1C1B18' }] },
     plate: {
       enabled: true,

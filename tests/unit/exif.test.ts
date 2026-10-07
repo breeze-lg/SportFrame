@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { readExif } from '../../src/core/exif'
+import { formatAperture, readExif } from '../../src/core/exif'
 import type { Exif } from '../../src/core/types'
 
 /**
@@ -54,11 +54,17 @@ const FORMATS: Record<keyof Exif, RegExp> = {
  * both — which is the day the file last changed, not the day the photo was
  * taken. Reading that one is what the printer did before this test said
  * otherwise, and it printed the same wrong day for both frames.
+ *
+ * This frame is also the whole-stop aperture case: the camera wrote `FNumber`
+ * 15/1, and photographic convention writes a whole stop as `f/15`, never
+ * `f/15.0` — the trailing decimal is an artefact of a fixed one-decimal
+ * formatter, not of the reading. The value here is the caption the spec plate
+ * prints verbatim, so it is pinned the way a photographer would read it.
  */
 const NIKON: Exif = {
   camera: 'NIKON CORPORATION NIKON D810',
   focal: '85mm',
-  aperture: 'f/15.0',
+  aperture: 'f/15',
   shutter: '1/125',
   iso: 'ISO 64',
   date: '2019.12.03',
@@ -89,6 +95,27 @@ describe('readExif', () => {
 
   it('reads the same values through a little-endian TIFF header', () => {
     expect(readExif(buf('with-exif-le.jpg'))).toEqual(NIKON_LE)
+  })
+
+  /**
+   * The caption convention on both of its outcomes: a whole stop loses the
+   * decimal, a fractional one keeps it. Only the first can be reached through a
+   * fixture — `with-exif.jpg` stores `FNumber` 15/1, and no rights-clean file
+   * here carries a fractional aperture — and a rule with two outcomes that only
+   * ever gets tested on one of them is a rule half the app could lose. The
+   * fractional case is the common one in the wild: every camera that writes
+   * `ApertureValue` instead of `FNumber` arrives through `2^(apex/2)`, and
+   * `f/2.8` is what a photographer reads off the ring.
+   */
+  it('writes a whole stop without a decimal and a fractional one with', () => {
+    expect(formatAperture(15)).toBe('f/15')
+    expect(formatAperture(16)).toBe('f/16')
+    expect(formatAperture(28 / 10)).toBe('f/2.8')
+    expect(formatAperture(2.1)).toBe('f/2.1')
+    expect(formatAperture(1.4)).toBe('f/1.4')
+    // and the shape the APEX branch actually hands it: ApertureValue 3/1 is
+    // 2^1.5 = 2.83, which is the f/2.8 above and must not print as 2.828427…
+    expect(formatAperture(Math.pow(2, 3 / 2))).toBe('f/2.8')
   })
 
   it('[RF-2] prefers the capture date over the file’s save date', () => {

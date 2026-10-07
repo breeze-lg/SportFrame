@@ -30,6 +30,22 @@ const TAG_ISO = 0x8827
 /** Every offset in an IFD entry is TIFF-relative, so `tiffStart` rides along. */
 type Reader = { view: DataView; le: boolean; tiffStart: number }
 
+/**
+ * `f/2.8`, but `f/16` — a whole stop is written without a decimal, which is the
+ * convention every aperture ring and lens barrel follows and the one the spec
+ * plate is read against. `toFixed(1)` alone prints `f/16.0` for a camera that
+ * stored `FNumber` 16/1, and a caption is the one place nobody can ignore it:
+ * the plate prints these strings verbatim, in the exported poster.
+ *
+ * Exported because it *is* that decision, and the decision has two outcomes —
+ * a whole stop and a fractional one — which the file-level tests can only reach
+ * one of each (`with-exif.jpg` stores `FNumber` 15/1, and no fixture carries a
+ * fractional aperture). Both are pinned directly in `tests/unit/exif.test.ts`.
+ */
+export function formatAperture(v: number): string {
+  return `f/${v.toFixed(1).replace(/\.0$/, '')}`
+}
+
 function u16(r: Reader, off: number): number {
   return r.view.getUint16(r.tiffStart + off, r.le)
 }
@@ -186,13 +202,13 @@ export function readExif(buf: ArrayBuffer): Exif | null {
     const fnum = tags.get(TAG_FNUMBER)
     if (fnum) {
       const v = rational(r, u32(r, fnum.entry + 8), fnum.type)
-      if (v !== null && v > 0) out.aperture = `f/${v.toFixed(1)}`
+      if (v !== null && v > 0) out.aperture = formatAperture(v)
     }
     if (!out.aperture) {
       const ap = tags.get(TAG_APERTURE)
       if (ap) {
         const apex = rational(r, u32(r, ap.entry + 8), ap.type)
-        if (apex !== null) out.aperture = `f/${Math.pow(2, apex / 2).toFixed(1)}`
+        if (apex !== null) out.aperture = formatAperture(Math.pow(2, apex / 2))
       }
     }
 

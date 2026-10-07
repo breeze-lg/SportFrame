@@ -1,6 +1,7 @@
 import { drawBackground } from './background'
 import { aspectOf, cover, fitRect, matRect } from './geometry'
 import { drawMat, roundedRect } from './mat'
+import { drawPlate } from './plate'
 import { drawText } from './text'
 import type { RenderInput, Rect } from './types'
 
@@ -71,7 +72,21 @@ export function render(input: RenderInput): void {
     drawText(ctx, size, template.text, text, frame, k, template.frame.matBottom)
   }
 
-  void exif // the plate arrives in Task 16
+  if (template.plate && frame) {
+    // The band is the mat's bottom strip: the same `matRect` the mat was drawn
+    // from, cut at the photo's bottom edge, so the plate can never be laid out
+    // over the photograph or past the mat. Device pixels, as for everything
+    // derived from `frame`.
+    const mat = matRect(frame, template.frame.mat, template.frame.matBottom, k)
+    const bandTop = frame.y + frame.h + template.frame.mat * k
+    const band = {
+      x: frame.x + template.frame.mat * k,
+      y: bandTop,
+      w: frame.w,
+      h: Math.max(1, mat.y + mat.h - bandTop),
+    }
+    drawPlate(ctx, template.plate, exif, band, k)
+  }
 
   ctx.restore()
 }
