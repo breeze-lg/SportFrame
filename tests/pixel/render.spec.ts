@@ -69,32 +69,81 @@ test('k=2 fills twice the area of k=1', async ({ page }) => {
     }
     // The seam where the mat starts is the boundary this can be measured on
     // exactly: the darkened background never reaches 250 and the mat is flat
-    // white, so the first such pixel on the centre row is the mat's left edge,
-    // and the photograph's frame sits a fixed distance inside it. A pixel of
-    // the photograph cannot carry the assertion — Chromium resamples the same
-    // source through different filters at 0.66x and 1.32x, so a high-contrast
-    // pixel moves a few levels even when the geometry has not moved at all.
-    const matEdge = (len: number, y: number): number => {
-      const row = f.sample(0, y, len, 1)
-      for (let x = 0; x < len; x++) {
-        if (row[x * 4]! >= 250 && row[x * 4 + 1]! >= 250) return x
+    // white, so the first such pixel running in from an edge is the mat's
+    // left/top edge, and the photograph's frame sits a fixed distance inside
+    // it. Both axes are scanned: a y-only scaling bug would slip past a row
+    // scan, and the mat's 1px inset is applied on both.
+    const matEdge = (len: number, across: number, axis: 'row' | 'col'): number => {
+      const line = axis === 'row' ? f.sample(0, across, len, 1) : f.sample(across, 0, 1, len)
+      for (let i = 0; i < len; i++) {
+        if (line[i * 4]! >= 250 && line[i * 4 + 1]! >= 250) return i
       }
       return -1
     }
 
+    // Mean of an n x n device patch centred on (cx, cy).
+    const patchMean = (cx: number, cy: number, n: number): number[] => {
+      const d = f.sample(Math.round(cx - n / 2), Math.round(cy - n / 2), n, n)
+      let r = 0
+      let g = 0
+      let b = 0
+      for (let i = 0; i < d.length; i += 4) {
+        r += d[i]!
+        g += d[i + 1]!
+        b += d[i + 2]!
+      }
+      const area = n * n
+      return [r / area, g / area, b / area]
+    }
+
     f.setSize(600, 600)
     render({ ctx: f.ctx(), size: { W: 600, H: 600 }, k: 1, ...load })
-    const a = { edge: matEdge(600, 300), mat: f.pixel(300, 78) }
+    const a = {
+      edgeX: matEdge(600, 300, 'row'),
+      edgeY: matEdge(600, 300, 'col'),
+      mat: f.pixel(300, 78),
+      // inside the photograph, which covers 90..509 on both axes at this
+      // template and scale
+      photo: patchMean(300, 300, 8),
+    }
 
     f.setSize(1200, 1200)
     const ctx = f.ctx()
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     render({ ctx, size: { W: 600, H: 600 }, k: 2, ...load })
-    return [a, { edge: matEdge(1200, 600), mat: f.pixel(600, 156) }]
+    return [
+      a,
+      {
+        edgeX: matEdge(1200, 600, 'row'),
+        edgeY: matEdge(1200, 600, 'col'),
+        mat: f.pixel(600, 156),
+        // the same patch in logical units: the photograph covers 180..1019
+        // here, so 16 device pixels at k=2 is the 8 at k=1 doubled
+        photo: patchMean(600, 600, 16),
+      },
+    ]
   }, TEMPLATE)
 
-  expect(b.edge).toBe(a.edge * 2)
+  expect(b.edgeX).toBe(a.edgeX * 2)
+  expect(b.edgeY).toBe(a.edgeY * 2)
   expect(b.mat.slice(0, 3)).toEqual(a.mat.slice(0, 3))
+
+  // The photograph's *content* must not change with `k`. `k` is the on-screen
+  // scale and export renders at k=1, so an image whose content moved with
+  // scale is one the user exports having never seen it — the worst case this
+  // architecture has. No single pixel can carry this: Chromium resamples the
+  // same source through different filters at 0.66x and 1.32x, so a
+  // high-contrast pixel moves up to 8 levels even when nothing has moved.
+  // Patch means can: averaging removes that local jitter, while a misplaced or
+  // mis-scaled photograph samples a different neighbourhood and moves the mean
+  // by tens of levels — a one-logical-pixel displacement moves it by 59.
+  // Measured here, the two means differ by 0.18/0.19/0.16 per channel.
+  for (let ch = 0; ch < 3; ch++) {
+    expect(
+      Math.abs(a.photo[ch]! - b.photo[ch]!),
+      `photo patch mean moved with k: k=1 ${a.photo} vs k=2 ${b.photo}`,
+    ).toBeLessThanOrEqual(2)
+  }
 })
 
 test('render with no photo does not throw', async ({ page }) => {
