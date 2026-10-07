@@ -6,22 +6,11 @@ test('the ceremony hides the chrome and states the dimensions', async ({ page })
   await page.goto('/?dev=1')
   await page.waitForFunction(() => '__frameCeremony' in window)
 
-  // `body.ceremony-open .dock` is the rule under test, and the dock markup
-  // itself is Task 10's. Stand one in only while it is absent, so this pins the
-  // shipped rule without pre-empting the shell. It carries a focusable control
-  // because half of what the rule has to do is keep it out of the tab order.
-  await page.evaluate(() => {
-    if (!document.querySelector('.dock')) {
-      const dock = document.createElement('aside')
-      dock.className = 'dock'
-      const btn = document.createElement('button')
-      btn.dataset.probe = 'dock'
-      btn.textContent = '模板'
-      dock.appendChild(btn)
-      document.body.appendChild(dock)
-    }
-  })
-
+  // The dock is the shell's own (it ships with the frame-first layout), and it
+  // carries a focusable control — `#save` — because half of what
+  // `body.ceremony-open .dock` has to do is keep that control out of the tab
+  // order. Nothing is fabricated here: a shell that loses its dock fails this
+  // spec rather than being papered over.
   await page.evaluate(() => {
     const mod = (window as any).__frameCeremony
     return mod.showCeremony('data:image/gif;base64,R0lGODlhAQABAAAAACw=', 2880, 3600, () => {})
@@ -47,7 +36,7 @@ test('the ceremony hides the chrome and states the dimensions', async ({ page })
     tabbed.push(
       await page.evaluate(() => {
         const el = document.activeElement as HTMLElement | null
-        return el?.dataset?.probe ?? el?.tagName ?? 'none'
+        return el?.closest('.dock') ? 'dock' : (el?.tagName ?? 'none')
       }),
     )
   }

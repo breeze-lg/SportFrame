@@ -5,9 +5,67 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#E9E8E3">
 <title>模糊画框</title>
+<!--
+  First paint, ahead of the stylesheet and ahead of every module: the theme
+  lands on `documentElement` before the wall is painted. `src/ui/theme.ts` is a
+  deferred module, so on its own it always loses that race — a visitor whose
+  system prefers dark got a light wall first, and `app.css`'s .25s
+  background-color transition turned the correction into a fade. Dark mode is a
+  headline feature here and the wall is the material the whole design is made
+  of; the first frame has to be right.
+
+  This is the same decision `resolveTheme()` makes, on the same key
+  `readStoredTheme()` reads (the two are pinned together by
+  tests/unit/theme.test.ts, since a head script cannot import a module without
+  becoming deferred — the defect it exists to fix). Module scripts do re-apply
+  it, idempotently, once they run.
+-->
+<script>
+(function () {
+  var stored = null
+  try {
+    stored = localStorage.getItem('frame-app-theme')
+  } catch (e) {
+    /* Private modes and some webviews throw on access. The system preference
+       is still a usable answer, so this must not end the script. */
+  }
+  try {
+    var t = stored === 'light' || stored === 'dark'
+      ? stored
+      : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    document.documentElement.setAttribute('data-theme', t)
+    document.documentElement.style.colorScheme = t
+  } catch (e) {
+    /* No theme: the module applies one a moment later, and the stylesheet's
+       default is light. Never let this script take the page down with it. */
+  }
+})()
+</script>
 </head>
 <body>
-<div id="app"></div>
+<div class="app">
+  <main class="stage" id="stage">
+    <canvas id="cv"></canvas>
+    <div class="toast" id="toast"></div>
+  </main>
+
+  <aside class="dock">
+    <div class="drop" id="drop">把照片放到墙上<small>点击选择，也可以拖进来或粘贴</small></div>
+    <!-- A sibling of `.drop`, never a child of it: `wireInput` opens this input
+         from `.drop`'s own click handler, so an input nested inside the zone
+         would be clicked from within the dispatch of the click it caused —
+         a cycle. -->
+    <input type="file" id="file" accept="image/*" hidden>
+
+    <div class="rail-h"><b>样式</b></div>
+    <div class="rail" id="rail"></div>
+
+    <div class="acts">
+      <button class="btn btn-primary" id="save">保存</button>
+    </div>
+  </aside>
+</div>
+<div id="app" hidden></div>
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

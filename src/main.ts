@@ -9,9 +9,6 @@ import { exportPng, fitsCanvas, renderToCanvas, showCeremony, stamp } from './ui
 
 initTheme()
 
-const root = document.getElementById('app')
-if (root) root.textContent = 'ready'
-
 // Dev affordance — see spec §8. Enabled only with ?dev=1.
 let probeCanvas = document.createElement('canvas')
 

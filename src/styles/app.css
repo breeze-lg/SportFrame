@@ -89,3 +89,92 @@ body.ceremony-open .dock { opacity: 0; pointer-events: none; visibility: hidden;
 @media (prefers-reduced-motion: reduce) {
   .ceremony { transition: none; }
 }
+
+/* the shell — frame first: the wall takes the room, the dock carries the rail
+   and the actions, and nothing else is on screen in stages 1-4. */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+}
+.stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background-image: linear-gradient(180deg, var(--wall-hi), var(--wall) 46%, var(--wall-lo));
+}
+canvas#cv { max-width: 92%; max-height: 92%; box-shadow: var(--deep); border-radius: 2px; }
+.dock {
+  flex: none;
+  background: var(--surface);
+  border-top: 1px solid var(--bevel);
+  padding: 14px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.drop {
+  border: 1px dashed var(--bevel);
+  border-radius: 2px;
+  padding: 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--quiet);
+  cursor: pointer;
+}
+.drop small { display: block; font-size: 11.5px; margin-top: 4px; color: var(--faint); }
+.drop.over { border-color: var(--ink); color: var(--ink); }
+.rail-h b { font-weight: 400; font-size: 12.5px; color: var(--label); }
+.rail { display: flex; gap: 9px; overflow-x: auto; padding-bottom: 2px; }
+.acts { display: flex; }
+.btn {
+  font-family: var(--sans);
+  font-size: 14px;
+  padding: 12px 24px;
+  border-radius: 2px;
+  cursor: pointer;
+  border: 1px solid var(--bevel);
+  background: var(--surface);
+  color: var(--ink);
+}
+.btn-primary {
+  flex: 1;
+  background: var(--action-bg);
+  border-color: var(--action-bg);
+  color: var(--action-fg);
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
+.toast {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--action-bg);
+  color: var(--action-fg);
+  font-size: 12.5px;
+  padding: 9px 16px;
+  border-radius: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s;
+  white-space: nowrap;
+  max-width: 90%;
+}
+.toast.show { opacity: 1; }
+
+@media (min-width: 901px) {
+  .app { flex-direction: row; }
+  .stage { order: 1; }
+  .dock {
+    order: 0;
+    flex: none;
+    width: 340px;
+    border-top: 0;
+    border-right: 1px solid var(--bevel);
+    overflow-y: auto;
+  }
+}
