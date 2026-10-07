@@ -66,8 +66,9 @@ export function render(input: RenderInput): void {
   }
 
   if (template.text && frame) {
-    // `size` is logical and `frame` is already in device pixels, as for the mat
-    drawText(ctx, size, template.text, text, frame, k)
+    // `size` is logical and `frame` is already in device pixels, as for the mat;
+    // `matBottom` is logical like `size`, which is why `drawText` scales it.
+    drawText(ctx, size, template.text, text, frame, k, template.frame.matBottom)
   }
 
   void exif // the plate arrives in Task 16

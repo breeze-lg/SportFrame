@@ -4,7 +4,9 @@ import {
   decodePhoto,
   needsDownscale,
   previewScale,
+  wireInput,
 } from '../../src/ui/input'
+import type { Photo } from '../../src/core/types'
 
 const file = (name: string, type: string, size: number) =>
   ({ name, type, size }) as File
@@ -145,6 +147,102 @@ describe('[RF-4] a degenerate decode never reaches the renderer', () => {
       expect(revoke).toHaveBeenCalledTimes(1)
     })
   }
+})
+
+/**
+ * `wireInput` is DOM wiring, but only three things of the DOM: two
+ * `addEventListener`s, a `classList`, and one `document` listener for paste.
+ * Faking exactly those is enough to drive the code path that matters, and it
+ * keeps the run in the `node` environment the rest of this file uses.
+ */
+function fakeDrop() {
+  const handlers: Record<string, (e: never) => void> = {}
+  return {
+    el: {
+      addEventListener: (t: string, fn: (e: never) => void) => {
+        handlers[t] = fn
+      },
+      classList: { add: () => {}, remove: () => {} },
+    } as unknown as HTMLElement,
+    fire: (t: string, e: unknown) => (handlers[t] as (x: unknown) => void)!(e),
+  }
+}
+
+function fakeFileInput() {
+  const handlers: Record<string, (e: never) => void> = {}
+  return {
+    el: {
+      addEventListener: (t: string, fn: (e: never) => void) => {
+        handlers[t] = fn
+      },
+      click: () => {},
+    } as unknown as HTMLInputElement,
+    fire: (t: string, e: unknown) => (handlers[t] as (x: unknown) => void)!(e),
+  }
+}
+
+/** Lets the `void handle(...)` inside `wireInput` run to completion. */
+const settle = () => new Promise((r) => setTimeout(r, 0))
+
+describe('[RF-4] wireInput reports what actually failed', () => {
+  it('does not report a failed render as a failed read', async () => {
+    // Task 12 wired the renderer into `onPhoto`, which made the shape of this
+    // `try` load-bearing: with the render inside it, a throw from `drawImage`
+    // comes out of the UI as "图片读取失败 — 该格式可能不被此浏览器支持", sending
+    // the user to check a photo that decoded perfectly well. The two failures
+    // have different causes and different remedies, so they must not share a
+    // message.
+    vi.stubGlobal('document', { addEventListener: () => {} })
+    stubImage(1200, 800)
+
+    const drop = fakeDrop()
+    const file = fakeFileInput()
+    // typed implementations, so the recorded calls carry their arguments —
+    // `vi.fn()` alone types as a zero-argument mock and every read off `.calls`
+    // is then a compile error
+    const onError = vi.fn((_msg: string) => {})
+    const onPhoto = vi.fn((_photo: Photo): void => {
+      throw new Error('drawImage: the image is in the broken state')
+    })
+
+    wireInput(drop.el, file.el, onPhoto, onError, () => null)
+    file.fire('change', {
+      target: { files: [realFile('a.jpg', 'image/jpeg', 16)], value: '' },
+    })
+    await settle()
+
+    // the photo decoded and reached the renderer...
+    expect(onPhoto).toHaveBeenCalledTimes(1)
+    expect(onPhoto.mock.calls[0]![0]).toMatchObject({ width: 1200, height: 800 })
+    // ...and the renderer's own failure was reported as one. The message names
+    // the renderer and carries its detail; what it must never say is that the
+    // file could not be read, which is a different fault with a different fix.
+    expect(onError).toHaveBeenCalledTimes(1)
+    const reported = onError.mock.calls[0]![0] as string
+    expect(reported).toContain('渲染失败')
+    expect(reported).toContain('drawImage: the image is in the broken state')
+    expect(reported).not.toContain('图片读取失败')
+  })
+
+  it('still reports a decode failure, with the decode message', async () => {
+    // The other half: narrowing the `try` must not have disconnected it.
+    vi.stubGlobal('document', { addEventListener: () => {} })
+    stubImage(0, 0)
+
+    const drop = fakeDrop()
+    const file = fakeFileInput()
+    const onError = vi.fn((_msg: string) => {})
+    const onPhoto = vi.fn((_photo: Photo) => {})
+
+    wireInput(drop.el, file.el, onPhoto, onError, () => null)
+    file.fire('change', {
+      target: { files: [realFile('a.jpg', 'image/jpeg', 16)], value: '' },
+    })
+    await settle()
+
+    expect(onPhoto).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalledWith('图片读取失败')
+  })
 })
 
 describe('decodePhoto result', () => {

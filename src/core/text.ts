@@ -28,9 +28,19 @@ export function measureToFit(
 }
 
 /**
- * `frame` is the photo rect. It is unused until Task 12, which adds the
- * `'mat'` anchor and a `matBottom` parameter; the signature is already in
- * place so Task 12 changes the body only.
+ * Draws the configured slots onto the canvas.
+ *
+ * Two units meet here, and they do not agree:
+ *
+ * - `size` is LOGICAL — the canvas's logical box, as `resolveSize` returns it.
+ * - `frame` is DEVICE pixels. `render` scales the layout box by `k` before it
+ *   fits the frame into it, so what arrives here is already multiplied out.
+ *   The `'mat'` branch below depends on that: it adds the photo's device-space
+ *   bottom edge to a `matBottom`-derived offset, and multiplying the sum by `k`
+ *   again would push the text off the canvas at `k=2` and, at the `k=1` the
+ *   preview uses, leave it wherever the arithmetic happened to land.
+ *
+ * Everything this function derives from `size`, it scales by `k` itself.
  */
 export function drawText(
   ctx: CanvasRenderingContext2D,
@@ -39,6 +49,7 @@ export function drawText(
   values: Partial<Record<TextSlotId, string>>,
   frame: Rect,
   k: number,
+  matBottom = 0,
 ): void {
   const { W, H } = size
   const maxW = W * 0.86 * k
@@ -56,10 +67,15 @@ export function drawText(
     ctx.font = frameFont(fitted, slot.weight)
 
     let y: number
-    if (config.anchor === 'top') y = H * 0.10 * k + (slot.id === 'sub' ? fitted * 1.15 : 0)
+    if (config.anchor === 'mat' && matBottom > 4 * k) {
+      // the white band below the photo: sit 62% down it, which reads as
+      // optically centred rather than mathematically centred. `frame` is
+      // device pixels (see above), so `matBottom * k` is the one conversion.
+      y = frame.y + frame.h + matBottom * k * 0.62
+    } else if (config.anchor === 'top') y = H * 0.10 * k + (slot.id === 'sub' ? fitted * 1.15 : 0)
     else if (config.anchor === 'center') y = H * 0.50 * k
-    // 'bottom' and, for now, 'mat' — the 'mat' anchor (text in the band
-    // below the photo) needs the bottom-mat geometry and lands in Task 12.
+    // 'bottom', and 'mat' on a template with no bottom mat to speak of: never
+    // place text into a band too thin to hold it.
     else y = H * 0.90 * k
 
     if (slot.stroke) {

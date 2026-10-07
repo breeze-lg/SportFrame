@@ -137,6 +137,45 @@ canvas#cv:not([width]) { visibility: hidden; }
 .drop.over { border-color: var(--ink); color: var(--ink); }
 .rail-h b { font-weight: 400; font-size: 12.5px; color: var(--label); }
 .rail { display: flex; gap: 9px; overflow-x: auto; padding-bottom: 2px; }
+
+/* the template chips: a blank print each, not a labelled button — the wall is
+   the interface and this is the rack of mounts beside it. The name rides on
+   `title` and `aria-label` (see `src/ui/rail.ts`), so nothing here may rely on
+   text content. */
+.print {
+  position: relative;
+  flex: none;
+  width: 50px;
+  height: 62px;
+  border: 1px solid var(--bevel);
+  border-radius: 2px;
+  background: var(--surface);
+  cursor: pointer;
+  padding: 0;
+}
+.print.on { border-color: var(--ink); box-shadow: var(--lift); }
+.print.on::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 1px solid var(--ink);
+  border-radius: 1px;
+  opacity: .55;
+}
+.print.brass::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 11px;
+  height: 11px;
+  background: var(--brass);
+  clip-path: polygon(100% 0, 100% 100%, 0 0);
+}
+/* the chips are the app's second focus stop after the drop zone, and a border
+   colour alone is a weak one at this size */
+.print:focus-visible,
+.drop:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .acts { display: flex; }
 .btn {
   font-family: var(--sans);

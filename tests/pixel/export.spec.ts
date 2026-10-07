@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { resolveSize } from '../../src/core/geometry'
 import { MAX_CANVAS_AREA, MAX_CANVAS_EDGE } from '../../src/ui/export'
 
@@ -43,6 +45,36 @@ test.beforeEach(async ({ page }) => {
       exif: null,
     }
   })
+})
+
+/**
+ * The one test here that drives the app rather than `exportPng`: the save
+ * button is the seam Task 12 wired, and until a photo can be put on the wall
+ * and exported at a real scale through the real UI, "the app exports" is a
+ * claim about a code path nothing has run.
+ *
+ * It also pins the number the whole export exists to produce. The dimensions
+ * the ceremony states come from `state.size` — the canvas `draw()` laid out at
+ * k=1 — times the scale the export actually drew at. If the preview ever grew a
+ * second layout path, the poster the user is told about here would stop being
+ * the poster they saw.
+ */
+test('the save button exports at 2x and the ceremony states what was drawn', async ({ page }) => {
+  await page.goto('/')
+  await page.setInputFiles('#file', {
+    name: 'sample.webp',
+    mimeType: 'image/webp',
+    buffer: readFileSync(resolve('public/sample/sample.webp')),
+  })
+  await expect(page.locator('canvas#cv')).toBeVisible()
+
+  await page.click('#save')
+
+  // 6.6 MP to encode, so this one gets a longer leash than the default
+  await expect(page.locator('.ceremony')).toHaveCount(1, { timeout: 15_000 })
+  await expect(page.locator('.ceremony-dims')).toHaveText(`${DEFAULT.W * 2} × ${DEFAULT.H * 2} PNG`)
+  const src = await page.locator('.ceremony img').getAttribute('src')
+  expect(src?.startsWith('data:image/png')).toBe(true)
 })
 
 test('[RF-5] the advertised 4x export is downgraded to 1x and still produces a real image', async ({

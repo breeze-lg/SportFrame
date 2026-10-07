@@ -45,6 +45,46 @@ test('sizing the canvas reveals it — the guard cannot strand a drawn canvas', 
   expect(revealed.after).toBe('visible')
 })
 
+/**
+ * `.drop` is a plain `div` whose click handler opens `#file`, and `#file` is
+ * `hidden`. For a keyboard-only visitor that left the app's primary action —
+ * the only way to put a photo on the wall — with no route to it at all: not a
+ * tab stop, not activatable. Hence `tabindex="0"`, `role="button"`, and the
+ * Enter/Space handler in `wireInput`; all three are asserted here, because any
+ * one of them alone still leaves the door shut.
+ *
+ * The picker itself is the OS's and invisible to this test. What is observable
+ * is the click the app sends to `#file`, which is the whole of what the app
+ * does in response — so that is what the stub counts.
+ */
+test('the drop zone can be reached and opened from the keyboard alone', async ({ page }) => {
+  await page.goto('/')
+
+  // Reachable: Tab lands on it. Clicking it first would prove nothing — the
+  // question is whether the keyboard can get there without a pointer.
+  let reached = false
+  for (let i = 0; i < 5 && !reached; i++) {
+    await page.keyboard.press('Tab')
+    reached = await page.evaluate(() => document.activeElement?.id === 'drop')
+  }
+  expect(reached, 'Tab never lands on #drop — it is not in the tab order').toBe(true)
+
+  // Operable: Enter and Space do what a click does.
+  await page.evaluate(() => {
+    const input = document.querySelector('#file') as HTMLInputElement
+    ;(window as any).__opens = 0
+    input.click = () => {
+      ;(window as any).__opens += 1
+    }
+  })
+
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Space')
+  await page.click('#drop')
+
+  expect(await page.evaluate(() => (window as any).__opens)).toBe(3)
+})
+
 test('there is no adjustments control in stages 1-4', async ({ page }) => {
   await page.goto('/')
   // Non-exact: a literal <button>调整</button> is not the only shape this

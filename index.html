@@ -50,7 +50,10 @@
   </main>
 
   <aside class="dock">
-    <div class="drop" id="drop">把照片放到墙上<small>点击选择，也可以拖进来或粘贴</small></div>
+    <!-- `#file` is `hidden`, so this div is the only way to a photo for a
+         keyboard user: it needs a tab stop and a button role, and `wireInput`
+         opens the input on Enter and Space as well as on click. -->
+    <div class="drop" id="drop" tabindex="0" role="button">把照片放到墙上<small>点击选择，也可以拖进来或粘贴</small></div>
     <!-- A sibling of `.drop`, never a child of it: `wireInput` opens this input
          from `.drop`'s own click handler, so an input nested inside the zone
          would be clicked from within the dispatch of the click it caused —

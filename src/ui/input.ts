@@ -142,14 +142,42 @@ export function wireInput(
 ): void {
   const handle = async (file: File | undefined | null) => {
     if (!file) return
+
+    // Reading and rendering fail for different reasons and need different
+    // words. They shared one `try` until Task 12 put the renderer behind
+    // `onPhoto`: from then on a throw from `drawImage` came out of the UI as
+    // "图片读取失败 — 该格式可能不被此浏览器支持", which sends the user to check
+    // a photo that decoded perfectly well and hides a rendering fault behind a
+    // file-format message. Two `try`s, two messages.
+    let photo: Photo
     try {
-      onPhoto(await decodePhoto(file, readExif))
+      photo = await decodePhoto(file, readExif)
     } catch (e) {
       onError(e instanceof Error ? e.message : '图片读取失败')
+      return
+    }
+
+    // Not left to propagate: an unhandled rejection here is a renderer fault
+    // that reaches the user as *silence* — no message at all, while the canvas
+    // has already been re-sized (which clears it). It gets the renderer's own
+    // name and the renderer's own detail.
+    try {
+      onPhoto(photo)
+    } catch (e) {
+      onError(e instanceof Error ? `渲染失败：${e.message}` : '渲染失败')
     }
   }
 
-  drop.addEventListener('click', () => fileInput.click())
+  const open = () => fileInput.click()
+  drop.addEventListener('click', open)
+  // `#file` is hidden and `.drop` is a div, so without this a keyboard-only
+  // visitor has no way to add a photo at all. Space would otherwise scroll the
+  // page, which is why it is prevented here rather than in the markup.
+  drop.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    e.preventDefault()
+    open()
+  })
   fileInput.addEventListener('change', (e) => {
     const t = e.target as HTMLInputElement
     void handle(t.files?.[0])
