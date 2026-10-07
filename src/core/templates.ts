@@ -1,7 +1,8 @@
-import type { Ratio, Template, TextAnchor } from './types'
+import type { Ratio, Template, TextAnchor, TextSlotId } from './types'
 
 const RATIOS: Ratio[] = ['4:5', '1:1', '3:2', '16:9', '9:16', 'orig']
 const ANCHORS: TextAnchor[] = ['top', 'bottom', 'center', 'mat']
+const SLOT_IDS: TextSlotId[] = ['title', 'sub', 'sign']
 
 export type Validation = { ok: true; value: Template } | { ok: false; error: string }
 
@@ -11,6 +12,12 @@ export type Validation = { ok: true; value: Template } | { ok: false; error: str
  * a hand-edited or half-written record must not reach the renderer. Checks the
  * fields the renderer dereferences without a guard; anything optional is only
  * checked when present, so a minimal record is still valid.
+ *
+ * Numbers must be *finite*: `typeof NaN === 'number'`, so a NaN that got past
+ * the type check would sail through `fitRect` and `drawImage` as a blank
+ * poster. `text.slots[]` is checked element by element because `drawText`
+ * reads `slot.id` off every entry it iterates — a `null` there is a
+ * `TypeError` at render time, not a cosmetic flaw.
  */
 export function validateTemplate(t: unknown): Validation {
   if (typeof t !== 'object' || t === null) return { ok: false, error: 'not an object' }
@@ -18,6 +25,11 @@ export function validateTemplate(t: unknown): Validation {
 
   if (typeof o.id !== 'string' || !o.id) return { ok: false, error: 'missing id' }
   if (typeof o.name !== 'string' || !o.name) return { ok: false, error: 'missing name' }
+  // optional: absent is fine, but `'no'` and `0` are not booleans and both
+  // read the wrong way round at the entitlement gate
+  if (o.premium !== undefined && typeof o.premium !== 'boolean') {
+    return { ok: false, error: 'premium must be a boolean' }
+  }
 
   const layout = o.layout as Record<string, unknown> | undefined
   if (!layout || typeof layout.kind !== 'string') return { ok: false, error: 'missing layout' }
@@ -34,21 +46,44 @@ export function validateTemplate(t: unknown): Validation {
   if (!bg || !['blur', 'solid', 'none'].includes(bg.mode as string)) {
     return { ok: false, error: 'invalid background mode' }
   }
+  // optional: a `solid` template legitimately omits all three
+  for (const key of ['blur', 'darken', 'zoom']) {
+    const v = bg[key]
+    if (v === undefined) continue
+    if (typeof v !== 'number') return { ok: false, error: `background.${key} must be a number` }
+    if (!Number.isFinite(v)) return { ok: false, error: `background.${key} must be finite` }
+  }
 
   const f = o.frame as Record<string, unknown> | undefined
   if (!f) return { ok: false, error: 'missing frame' }
   for (const key of ['scale', 'radius', 'mat', 'matBottom', 'shadow']) {
     if (typeof f[key] !== 'number') return { ok: false, error: `frame.${key} must be a number` }
+    if (!Number.isFinite(f[key])) return { ok: false, error: `frame.${key} must be finite` }
   }
 
   if (o.text !== undefined) {
-    const tx = o.text as Record<string, unknown>
+    const tx = o.text as Record<string, unknown> | null
+    if (typeof tx !== 'object' || tx === null) return { ok: false, error: 'text must be an object' }
     if (!ANCHORS.includes(tx.anchor as TextAnchor)) return { ok: false, error: 'invalid anchor' }
     if (!Array.isArray(tx.slots)) return { ok: false, error: 'slots must be an array' }
+    // `drawText` reads `slot.id` off every element without a guard, so a bare
+    // `null` here is the one malformed record that crashes rather than
+    // degrades. Name the offending index: a slot list is long enough that
+    // "invalid text" would leave the developer counting entries by hand.
+    for (let i = 0; i < tx.slots.length; i++) {
+      const slot = tx.slots[i] as Record<string, unknown> | null
+      if (typeof slot !== 'object' || slot === null) {
+        return { ok: false, error: `text.slots[${i}] must be an object` }
+      }
+      if (!SLOT_IDS.includes(slot.id as TextSlotId)) {
+        return { ok: false, error: `invalid text.slots[${i}].id` }
+      }
+    }
   }
 
   if (o.plate !== undefined) {
-    const p = o.plate as Record<string, unknown>
+    const p = o.plate as Record<string, unknown> | null
+    if (typeof p !== 'object' || p === null) return { ok: false, error: 'plate must be an object' }
     if (typeof p.enabled !== 'boolean') return { ok: false, error: 'plate.enabled must be boolean' }
     if (!Array.isArray(p.fields)) return { ok: false, error: 'plate.fields must be an array' }
   }
