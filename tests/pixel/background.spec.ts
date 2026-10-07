@@ -33,7 +33,18 @@ test('an empty canvas with no photo paints #2a3238', async ({ page }) => {
   expect(px.slice(0, 3)).toEqual([42, 50, 56])
 })
 
-test('darken lowers the luminance of a blurred background', async ({ page }) => {
+/**
+ * `darken` is a percentage, and the assertion is the percentage it names rather
+ * than "darker than it was". `darken: 64` composites `rgba(0, 0, 0, .64)` over
+ * the blurred photo, so what survives is 0.36 of it — measured here at 0.362,
+ * the 0.002 being the compositor's per-channel rounding.
+ *
+ * The band is tight on purpose. The old ceiling of 0.6 was 1.67x the real
+ * ratio, so a wash applied at any strength between 0.36 and 0.60 — a darken
+ * that read the slider as 0-255, say, or one applied twice at a lower opacity
+ * — passed while producing a visibly different poster.
+ */
+test('darken lowers a blurred background to the ratio it names', async ({ page }) => {
   const [plain, darkened] = await page.evaluate(async () => {
     const f = (window as any).__frame
     const img = new Image()
@@ -57,5 +68,7 @@ test('darken lowers the luminance of a blurred background', async ({ page }) => 
 
     return [a, b]
   })
-  expect(lum(darkened)).toBeLessThan(lum(plain) * 0.6)
+  const ratio = lum(darkened) / lum(plain)
+  expect(ratio, `darken 64 left ${ratio.toFixed(3)} of the plain luminance`).toBeGreaterThan(0.33)
+  expect(ratio, `darken 64 left ${ratio.toFixed(3)} of the plain luminance`).toBeLessThan(0.39)
 })

@@ -6,6 +6,10 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: 0,
   reporter: [['list']],
+  // Where the template goldens live, and where they are committed from. The
+  // plan names this path and Task 18's README repeats it; Playwright's default
+  // would put them in `tests/pixel/templates.spec.ts-snapshots/` instead.
+  snapshotPathTemplate: '{testDir}/__screenshots__/{arg}{ext}',
   use: {
     baseURL: 'http://localhost:4173',
     viewport: { width: 1280, height: 900 },
