@@ -3,8 +3,28 @@ import type { Exif, Photo, Size, Template, TextSlotId } from '../core/types'
 
 export const MAX_CANVAS_EDGE = 16384
 
+/**
+ * WebKit does not bound canvases by edge length alone: it caps *area*, and the
+ * iOS cap is far below `MAX_CANVAS_EDGE²` — 4096×4096 = 16,777,216 px, the
+ * figure MDN still documents for iOS and the one WebKit enforced from 2015
+ * (bug 145998) before a later device-memory bump raised it to 8192². A canvas
+ * over the cap does not throw: drawing becomes a no-op and `toBlob` yields
+ * null, so the export would hand a paying user a blank poster with no error.
+ *
+ * An edge-only guard cannot see this. A 4× export of this app's default 4:5
+ * canvas (1152×1440 logical → 4608×5760 = 26.5 MP) has both edges legal and
+ * still blows an iOS area cap — and 4× is the advertised premium tier (§10),
+ * not an exotic request. 16,777,216 is the conservative floor of the WebKit
+ * area caps rather than the raised one, because the device tier is not
+ * detectable from script; every supported iPhone honours this number. It holds
+ * every 2× export this app can produce (the default 2× is 6.6 MP) with room.
+ */
+export const MAX_CANVAS_AREA = 16_777_216
+
 export function fitsCanvas(size: Size, k: number): boolean {
-  return size.W * k <= MAX_CANVAS_EDGE && size.H * k <= MAX_CANVAS_EDGE
+  const W = size.W * k
+  const H = size.H * k
+  return W <= MAX_CANVAS_EDGE && H <= MAX_CANVAS_EDGE && W * H <= MAX_CANVAS_AREA
 }
 
 export function stamp(d: Date): string {
@@ -61,16 +81,35 @@ export async function exportPng(
     downgraded = true
   }
 
-  const canvas = renderToCanvas(
-    opts.size,
-    k,
-    opts.template,
-    opts.photos,
-    opts.text as Partial<Record<TextSlotId, string>>,
-    opts.exif,
-  )
+  const draw = (scale: number) =>
+    renderToCanvas(
+      opts.size,
+      scale,
+      opts.template,
+      opts.photos,
+      opts.text as Partial<Record<TextSlotId, string>>,
+      opts.exif,
+    )
+  const encode = (canvas: HTMLCanvasElement) =>
+    new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'))
 
-  const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'))
+  let canvas = draw(k)
+  let blob = await encode(canvas)
+
+  // The check above is a prediction; this is the recovery. Where the engine
+  // disagrees with it — an area cap the budget under-estimates, or plain memory
+  // pressure on a big canvas — WebKit fails *silently*: `toBlob` hands back
+  // null instead of throwing. Retry once at 1× before reporting failure, per
+  // spec §9's "catch, retry at lower scale, tell the user what happened".
+  // Already at 1×, or the size does not fit at 1× either, means no retry can
+  // help: fall through to the failure the user can act on.
+  if (!blob && k > 1 && fitsCanvas(opts.size, 1)) {
+    k = 1
+    downgraded = true
+    canvas = draw(k)
+    blob = await encode(canvas)
+  }
+
   if (!blob) throw new Error('导出失败：图片太大，请降低输出长边')
 
   const filename = `frame_${canvas.width}x${canvas.height}_${stamp(new Date())}.png`

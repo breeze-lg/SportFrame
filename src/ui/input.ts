@@ -47,6 +47,30 @@ function downscale(img: HTMLImageElement): HTMLImageElement | null {
   return out
 }
 
+/**
+ * The one object URL the photo currently in hand still needs.
+ *
+ * It is deliberately *not* revoked when the decode settles: `Photo.el.src` is
+ * that URL, and the export draws from that same `el` long afterwards. A browser
+ * that discards decoded image data under memory pressure and re-fetches from
+ * `src` will then fail — `drawImage` throws
+ * `InvalidStateError: … in the 'broken' state` — and iOS Safari evicts decoded
+ * data aggressively. The trigger conditions are this app's normal ones: a
+ * 12 MP photo is ~48 MB decoded, held in a detached, never-painted `<img>`
+ * while the export allocates its canvas.
+ *
+ * It is revoked when the next photo replaces it, so a session holds at most one
+ * live URL. The prototype's bug was never revoking at all — unbounded growth
+ * for the lifetime of the page — and that stays fixed; one live URL at a time
+ * is lifetime management, not a leak.
+ */
+let liveUrl: string | null = null
+
+function releaseLiveUrl(): void {
+  if (liveUrl !== null) URL.revokeObjectURL(liveUrl)
+  liveUrl = null
+}
+
 export async function decodePhoto(
   file: File,
   readExif: (buf: ArrayBuffer) => Exif | null,
@@ -84,6 +108,13 @@ export async function decodePhoto(
       }
     }
 
+    // A photo escaped, so these bytes live on: `el.src` is this URL until the
+    // next photo replaces it (see `liveUrl`). Released here, after the decode
+    // has settled, never before it — a pending load is never pulled out from
+    // under itself.
+    releaseLiveUrl()
+    liveUrl = url
+
     return {
       el,
       preview,
@@ -92,12 +123,13 @@ export async function decodePhoto(
       name: (file.name || '').replace(/\.[^.]+$/, ''),
       exif,
     }
-  } finally {
-    // `finally`, not after the await: the URL is released on the error path
-    // too. The prototype only revoked on the success path, so every failed load
-    // leaked its blob for the lifetime of the page. It is still revoked after
-    // the image settles, never before, so the bytes outlive the decode.
+  } catch (e) {
+    // No photo escaped, so these bytes are unreachable and go now, on the error
+    // path as well as the success path. The prototype revoked only on the
+    // success path, so every failed load leaked its blob for the lifetime of
+    // the page; that is what this branch keeps fixed.
     URL.revokeObjectURL(url)
+    throw e
   }
 }
 

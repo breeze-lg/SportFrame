@@ -33,8 +33,13 @@ body {
   font-size: 14px;
 }
 
-/* the export ceremony — spec §8 */
-body.ceremony-open .dock { opacity: 0; pointer-events: none; }
+/* the export ceremony — spec §8.
+   `visibility: hidden`, not only `opacity: 0`: an invisible-but-present control
+   is still in the tab order, so a keyboard user tabbing during the ceremony
+   would reach dock controls they cannot see. `visibility` removes it from the
+   tab order and from assistive tech without reflowing the layout behind the
+   ceremony — the dock stays in the DOM (that is the whole point). */
+body.ceremony-open .dock { opacity: 0; pointer-events: none; visibility: hidden; }
 .ceremony {
   position: fixed;
   inset: 0;

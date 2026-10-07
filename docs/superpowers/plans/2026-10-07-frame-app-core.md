@@ -1681,7 +1681,8 @@ Pins Review Focus 4. Decoding is where a photo app most often fails silently.
 **Files:**
 - Create: `src/ui/input.ts`
 - Create: `tests/unit/input.test.ts`
-- Modify: `src/main.ts`
+
+`src/main.ts` needs no change here. This task builds a module and unit-tests it in isolation; `wireInput` is not called until Task 12 wires the app shell to state and canvas. An earlier draft of this file list named `main.ts` with no corresponding step, which was an error.
 
 **Interfaces:**
 - Consumes: `Photo`, `Exif` (Task 3)

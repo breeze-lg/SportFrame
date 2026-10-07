@@ -5,7 +5,7 @@ import { drawMat } from './core/mat'
 import { drawBackground } from './core/background'
 import { drawText, measureToFit, frameFont } from './core/text'
 import { render } from './core/render'
-import { showCeremony } from './ui/export'
+import { exportPng, fitsCanvas, renderToCanvas, showCeremony, stamp } from './ui/export'
 
 initTheme()
 
@@ -52,9 +52,19 @@ if (new URLSearchParams(location.search).has('dev')) {
   ;(window as unknown as { __frame: typeof api }).__frame = api
 }
 
-// Interim dev handle for Task 9 only — the export ceremony's pixel test runs
-// before the shell exists, so it cannot wait for Task 12's consolidated block.
-// Task 12 folds this into that block.
+// Interim dev handles for Task 9 only — the ceremony and export pixel tests run
+// before the shell exists, so they cannot wait for Task 12's consolidated
+// block. `__frameExport` is already the shape Task 12 specifies for it
+// (`{ exportPng, renderToCanvas, fitsCanvas, stamp }`), and the handle is what
+// makes the canvas-limit fallback reachable from a test at all: the output long
+// edge is a constant 1440 in these stages, so no UI path asks for a 4× export.
+// Task 12 folds both into its dev API.
 if (new URLSearchParams(location.search).has('dev')) {
+  ;(window as unknown as Record<string, unknown>).__frameExport = {
+    exportPng,
+    renderToCanvas,
+    fitsCanvas,
+    stamp,
+  }
   ;(window as unknown as Record<string, unknown>).__frameCeremony = { showCeremony }
 }

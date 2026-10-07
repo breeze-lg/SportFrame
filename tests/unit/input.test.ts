@@ -70,6 +70,25 @@ const realFile = (name: string, type: string, bytes: number) =>
  * prove nothing about how a real browser fails. Real corrupt bytes and real
  * `onerror` are the pixel suite's business.
  */
+/**
+ * Records every object URL created and revoked. Each call takes a unique
+ * prefix because the module under test holds its live URL in module state:
+ * without distinct names a later test could pass on an earlier test's URL.
+ */
+function trackUrls(prefix: string): { created: string[]; revoked: string[] } {
+  const created: string[] = []
+  const revoked: string[] = []
+  vi.spyOn(URL, 'createObjectURL').mockImplementation(() => {
+    const url = `blob:${prefix}-${created.length + 1}`
+    created.push(url)
+    return url
+  })
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation((url: string) => {
+    revoked.push(String(url))
+  })
+  return { created, revoked }
+}
+
 function stubImage(width: number, height: number, log: string[] = []): void {
   class StubImage {
     onload: (() => void) | null = null
@@ -121,8 +140,8 @@ describe('[RF-4] a degenerate decode never reaches the renderer', () => {
         '图片读取失败',
       )
 
-      // the object URL is released on the failure path too: the revoke lives in
-      // `finally`, not after the await
+      // the object URL is released on the failure path too — a failed load
+      // revokes its own URL at once, and only that one
       expect(revoke).toHaveBeenCalledTimes(1)
     })
   }
@@ -150,17 +169,49 @@ describe('decodePhoto result', () => {
     expect(readExif.mock.calls[0]![0]).toBeInstanceOf(ArrayBuffer)
   })
 
-  it('revokes the object URL only after the decode has settled', async () => {
-    // The object URL is the image's source: revoking it before the decode
-    // finishes would pull the bytes out from under a pending load.
-    const order: string[] = []
-    stubImage(1200, 800, order)
-    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {
-      order.push('revoke')
-    })
+  it('keeps the object URL alive when the decode settles', async () => {
+    // The photo's `el.src` is this URL and the export draws from `el` much
+    // later. A browser that discards decoded image data under memory pressure
+    // (iOS Safari does, aggressively) re-fetches from `src`; revoking here
+    // would turn that into `InvalidStateError` and a raw English toast.
+    const { created, revoked } = trackUrls('alive')
+    stubImage(1200, 800)
 
+    const photo = await decodePhoto(realFile('a.jpg', 'image/jpeg', 16), () => null)
+
+    expect(created).toEqual(['blob:alive-1'])
+    expect(revoked).not.toContain('blob:alive-1')
+    expect(photo.el.naturalWidth).toBe(1200)
+  })
+
+  it('revokes the previous photo\'s URL when a new photo replaces it', async () => {
+    // One live URL at a time: the leak the prototype had (never revoking, so a
+    // session grew without bound) stays fixed.
+    const { created, revoked } = trackUrls('replace')
+    stubImage(1200, 800)
     await decodePhoto(realFile('a.jpg', 'image/jpeg', 16), () => null)
+    stubImage(1200, 800)
+    await decodePhoto(realFile('b.jpg', 'image/jpeg', 16), () => null)
 
-    expect(order).toEqual(['load', 'revoke'])
+    expect(created).toEqual(['blob:replace-1', 'blob:replace-2'])
+    expect(revoked).toContain('blob:replace-1')
+    // ...and the URL the current photo still needs is untouched
+    expect(revoked).not.toContain('blob:replace-2')
+  })
+
+  it('releases a failed load\'s URL immediately — nothing draws from it', async () => {
+    // The prototype revoked only on the success path, so every failed load
+    // leaked its blob for the lifetime of the page. That stays fixed: no photo
+    // escapes a failure, so the URL goes at once rather than being handed to
+    // the next replacement.
+    const { created, revoked } = trackUrls('failed')
+    stubImage(0, 0)
+
+    await expect(decodePhoto(realFile('a.jpg', 'image/jpeg', 16), () => null)).rejects.toThrow(
+      '图片读取失败',
+    )
+
+    expect(created).toEqual(['blob:failed-1'])
+    expect(revoked).toContain('blob:failed-1')
   })
 })
