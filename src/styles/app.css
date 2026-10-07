@@ -108,6 +108,13 @@ body.ceremony-open .dock { opacity: 0; pointer-events: none; visibility: hidden;
   background-image: linear-gradient(180deg, var(--wall-hi), var(--wall) 46%, var(--wall-lo));
 }
 canvas#cv { max-width: 92%; max-height: 92%; box-shadow: var(--deep); border-radius: 2px; }
+/* Until something is drawn on it, `#cv` is a transparent 300×150 box, and
+   `--deep` still paints its shadow around it — in light theme a wide dark
+   smudge floating mid-wall, in the state this shell exists to define. The
+   frame is a 4:5 portrait mat, never a landscape 300×150 smudge, so this is a
+   rendering fault, not an empty state. Assigning `canvas.width` (what sizing
+   the canvas for a photo does) reflects to the attribute and reveals it. */
+canvas#cv:not([width]) { visibility: hidden; }
 .dock {
   flex: none;
   background: var(--surface);

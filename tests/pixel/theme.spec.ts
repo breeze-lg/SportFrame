@@ -62,6 +62,7 @@ test.describe('themes', () => {
 
     expect(bundle.blocked()).toBeGreaterThan(0)
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+    await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark')
     await expect(page.locator('body')).toHaveCSS('background-color', RGB(25, 24, 21))
   })
 
@@ -72,7 +73,42 @@ test.describe('themes', () => {
 
     expect(bundle.blocked()).toBeGreaterThan(0)
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+    await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark')
     await expect(page.locator('body')).toHaveCSS('background-color', RGB(25, 24, 21))
+  })
+
+  /**
+   * The other half of the first paint: the head script runs before the
+   * stylesheet link is even parsed (in `dist/index.html` the inline script is
+   * above both `<script type="module">` and `<link rel="stylesheet">`), so
+   * between the script and the stylesheet the document's `color-scheme` — the
+   * UA's own chrome, not the wall — can come from nowhere else. Aborting both
+   * the stylesheet and the module freezes the page inside that window: there is
+   * no CSS to declare `color-scheme` and no module to re-apply it, which leaves
+   * the inline `documentElement.style.colorScheme` as the only thing that can
+   * answer. (`color-scheme` here is `normal` without it.)
+   *
+   * This test exists because the two above cannot see that line go missing:
+   * `tokens.css` re-declares `color-scheme: dark` under
+   * `:root[data-theme='dark']`, and the head script sets `data-theme`, so once
+   * the stylesheet lands the computed value is dark whether or not the script
+   * ever set it. There the assertion would hold on the bug; here it cannot.
+   */
+  test('the head script themes the document before the stylesheet lands', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'light' })
+    await page.addInitScript(() => localStorage.setItem('frame-app-theme', 'dark'))
+    let stylesheets = 0
+    await page.route('**/assets/*.css', (route) => {
+      stylesheets++
+      return route.abort()
+    })
+    const bundle = await blockModule(page)
+    await page.goto('/')
+
+    expect(bundle.blocked()).toBeGreaterThan(0)
+    expect(stylesheets).toBeGreaterThan(0)
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+    await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark')
   })
 
   test('theme-color meta follows --wall in both themes', async ({ page }) => {
