@@ -4,6 +4,7 @@ import { initTheme } from './ui/theme'
 import { drawMat } from './core/mat'
 import { drawBackground } from './core/background'
 import { drawText, measureToFit, frameFont } from './core/text'
+import { render } from './core/render'
 
 initTheme()
 
@@ -45,6 +46,7 @@ if (new URLSearchParams(location.search).has('dev')) {
     drawText,
     measureToFit,
     frameFont,
+    render,
   }
   ;(window as unknown as { __frame: typeof api }).__frame = api
 }
