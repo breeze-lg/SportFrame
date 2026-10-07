@@ -138,6 +138,36 @@ canvas#cv:not([width]) { visibility: hidden; }
 .rail-h b { font-weight: 400; font-size: 12.5px; color: var(--label); }
 .rail { display: flex; gap: 9px; overflow-x: auto; padding-bottom: 2px; }
 
+/* 付费标记 — the premium plaque, from the design sheet's `.plaque`: brass text
+   on a brass hairline, with the brass dot. `--brass` is the premium marker and
+   the only thing in this app allowed to look like metal (see `.print.brass`).
+   It sits under the rail and names the pack a locked template belongs to; §10
+   ships nothing gated, so in v1 it is never shown.
+   The `[hidden]` rule is not tidiness: this element sets its own `display`, and
+   a rule that did so without it would beat the UA's `[hidden] { display: none }`
+   and put a plaque announcing a lock on screen for every visitor. */
+.plaque-row {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--brass);
+  border: 1px solid var(--brass-line);
+  background: var(--brass-wash);
+  padding: 5px 11px;
+  border-radius: 2px;
+}
+.plaque-row::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brass);
+}
+.plaque-row[hidden] { display: none; }
+
 /* the template chips: a blank print each, not a labelled button — the wall is
    the interface and this is the rack of mounts beside it. The name rides on
    `title` and `aria-label` (see `src/ui/rail.ts`), so nothing here may rely on

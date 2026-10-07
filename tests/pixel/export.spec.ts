@@ -2,13 +2,14 @@ import { test, expect } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { resolveSize } from '../../src/core/geometry'
-import { MAX_CANVAS_AREA, MAX_CANVAS_EDGE } from '../../src/ui/export'
+import { MAX_CANVAS_AREA, MAX_CANVAS_EDGE, PREMIUM_CANVAS_AREA } from '../../src/ui/export'
 
 /**
- * Review Focus 5 — the canvas ceiling. The predicate alone is pinned in
- * `tests/unit/export.test.ts`; what lives here is the behaviour that predicate
- * drives: the 1× fallback, the recovery when the engine fails even though the
- * prediction passed, and the failure the user is left with when nothing fits.
+ * Review Focus 5 — the canvas ceiling, and Task 17's premium rung on top of it.
+ * The predicates alone are pinned in `tests/unit/export.test.ts`; what lives
+ * here is the behaviour they drive: which rung a request draws at, the fall
+ * down the ladder when the engine refuses a canvas even though the budget
+ * allowed it, and the failure the user is left with when nothing fits.
  *
  * `exportPng` is reached through the interim `?dev=1` handle because the output
  * long edge is a constant 1440 in these stages — no UI path can ask for a 4×
@@ -77,15 +78,19 @@ test('the save button exports at 2x and the ceremony states what was drawn', asy
   expect(src?.startsWith('data:image/png')).toBe(true)
 })
 
-test('[RF-5] the advertised 4x export is downgraded to 1x and still produces a real image', async ({
+test('[RF-5] the advertised 4x export is drawn, not downgraded, where the device admits it', async ({
   page,
 }) => {
   // The premise, in the numbers the browser sees: 4608×5760 — both edges legal
-  // (under 16384) and 26.5 MP of area (over the 16.8 MP budget). An edge-only
-  // guard waves this through, which is exactly the blank poster on iOS.
+  // (under 16384), 26.5 MP of area. Over the floor every device honours, which
+  // is why Task 9 downgraded this everywhere including desktop; inside WebKit's
+  // raised 8192² cap, which is what makes it deliverable at all. §10 sells 4×
+  // as the premium unlock, and this is the assertion that keeps that unlock
+  // from being hollow.
   expect(DEFAULT.W * 4).toBeLessThanOrEqual(MAX_CANVAS_EDGE)
   expect(DEFAULT.H * 4).toBeLessThanOrEqual(MAX_CANVAS_EDGE)
   expect(DEFAULT.W * 4 * (DEFAULT.H * 4)).toBeGreaterThan(MAX_CANVAS_AREA)
+  expect(DEFAULT.W * 4 * (DEFAULT.H * 4)).toBeLessThanOrEqual(PREMIUM_CANVAS_AREA)
 
   const res = await page.evaluate(
     async ({ tpl, size }) => {
@@ -100,7 +105,7 @@ test('[RF-5] the advertised 4x export is downgraded to 1x and still produces a r
       })
       // Decode what the user would actually receive. WebKit's failure is
       // silent — a blank or absent image — so "no throw" proves nothing; the
-      // bytes have to decode to opaque pixels at the downgraded dimensions.
+      // bytes have to decode to opaque pixels at the requested dimensions.
       const bmp = await createImageBitmap(r.blob)
       const c = document.createElement('canvas')
       c.width = bmp.width
@@ -121,13 +126,68 @@ test('[RF-5] the advertised 4x export is downgraded to 1x and still produces a r
     { tpl: TEMPLATE, size: DEFAULT },
   )
 
-  expect(res.k).toBe(1)
-  expect(res.downgraded).toBe(true)
-  // the file names the dimensions that were drawn, not the ones requested
-  expect(res.filename).toMatch(/^frame_1152x1440_\d{4}-\d\d-\d\d-\d\d-\d\d-\d\d\.png$/)
-  expect([res.w, res.h]).toEqual([DEFAULT.W, DEFAULT.H])
+  expect(res.k).toBe(4)
+  expect(res.downgraded).toBe(false)
+  expect(res.filename).toMatch(/^frame_4608x5760_\d{4}-\d\d-\d\d-\d\d-\d\d-\d\d\.png$/)
+  expect([res.w, res.h]).toEqual([DEFAULT.W * 4, DEFAULT.H * 4])
   expect(res.bytes).toBeGreaterThan(1000)
   expect(res.centre[3]).toBe(255)
+})
+
+test('[RF-5] a device that refuses the 4x canvas falls to the best rung it can hold', async ({
+  page,
+}) => {
+  // WebKit's refusal is not an exception: the canvas takes the draws and keeps
+  // none of them, and `toBlob` hands back null — the blank poster Task 9
+  // closed, and the reason the premium budget cannot simply be a bigger
+  // constant. Staged here by answering `getImageData` with zeros for any canvas
+  // over the floor, which is the shape a phone in WebKit's 4096² tier presents.
+  // The export's own check is what has to notice, and the rung below — held to
+  // the floor — is what has to catch it.
+  const res = await page.evaluate(
+    async ({ tpl, size, floor }) => {
+      const proto = CanvasRenderingContext2D.prototype
+      const real = proto.getImageData
+      proto.getImageData = function (
+        this: CanvasRenderingContext2D,
+        ...args: [number, number, number, number]
+      ) {
+        // a canvas that stores nothing answers with nothing
+        if (this.canvas.width * this.canvas.height > floor) return new ImageData(args[2], args[3])
+        return real.apply(this, args)
+      }
+      try {
+        const r = await (window as any).__frameExport.exportPng({
+          size,
+          template: tpl,
+          photos: [(window as any).__photo],
+          text: {},
+          exif: null,
+          want: 4,
+        })
+        const bmp = await createImageBitmap(r.blob)
+        return {
+          k: r.k,
+          downgraded: r.downgraded,
+          filename: r.filename,
+          bytes: r.blob.size,
+          w: bmp.width,
+          h: bmp.height,
+        }
+      } finally {
+        proto.getImageData = real
+      }
+    },
+    { tpl: TEMPLATE, size: DEFAULT, floor: MAX_CANVAS_AREA },
+  )
+
+  // One rung down, not two: 2× is 6.6 MP and fits the floor, so the user gets
+  // the largest file their device can hold rather than the smallest we can draw.
+  expect(res.k).toBe(2)
+  expect(res.downgraded).toBe(true)
+  expect(res.filename).toMatch(/^frame_2304x2880_\d{4}-\d\d-\d\d-\d\d-\d\d-\d\d\.png$/)
+  expect([res.w, res.h]).toEqual([DEFAULT.W * 2, DEFAULT.H * 2])
+  expect(res.bytes).toBeGreaterThan(1000)
 })
 
 test('[RF-5] a null encode — how WebKit reports an over-budget canvas — is retried at 1x', async ({

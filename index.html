@@ -62,6 +62,13 @@
 
     <div class="rail-h"><b>样式</b></div>
     <div class="rail" id="rail"></div>
+    <!-- The premium plaque (spec §10): it names the pack when a template is
+         premium *and* locked, and v1 ships nothing gated, so it is wired and
+         never shown. It carries its own `hidden` rather than being created on
+         demand: the picker writes two properties on an element that is always
+         in the dock, which is testable, where an element that appears and
+         disappears is only observable while it is there. -->
+    <div class="plaque-row" id="plaque" hidden></div>
 
     <div class="acts">
       <!-- Secondary, not primary: saving a template is a detour from the one

@@ -9,10 +9,12 @@ import { initTheme } from './ui/theme'
 import { createState } from './ui/state'
 import { toast } from './ui/toast'
 import { renderRail } from './ui/rail'
+import { plaqueText } from './ui/plaque'
 import { loadCustom, saveCustom, browserStorage, sessionStore } from './ui/custom'
 import type { Template } from './core/types'
 import { wireInput } from './ui/input'
 import { readExif } from './core/exif'
+import { isUnlocked, canExport } from './entitlements'
 import {
   exportPng,
   download,
@@ -117,7 +119,24 @@ function pick(id: string): void {
   if (!t) return
   state.template = t
   paintRail(id)
+  paintPlaque(t)
   draw()
+}
+
+/**
+ * The plaque under the rail, re-decided on every pick. It shows only for a
+ * template that is premium *and* locked, and in v1 `isUnlocked` answers true
+ * for everything, so the line is always empty: the plaque is wired, and its v1
+ * behaviour is to stay hidden. A saved copy of the premium template cannot
+ * light it up either — copies are written `premium: false`, the same reason
+ * they cannot mint a second brass chip on the rail.
+ */
+function paintPlaque(t: Template): void {
+  const plaque = document.getElementById('plaque')
+  if (!plaque) return
+  const line = plaqueText(t, isUnlocked(t))
+  plaque.hidden = line === ''
+  plaque.textContent = line
 }
 
 const rail = document.getElementById('rail') as HTMLElement
@@ -144,6 +163,16 @@ document.getElementById('save')?.addEventListener('click', async () => {
     toast('请先载入图片')
     return
   }
+  // The seam, and the whole of it: one call site (spec §10). In v1 the verdict
+  // is always `ok` and the export runs exactly as it did before this task
+  // existed. What the shape buys is the moment it stops being ok — the user is
+  // told why *before* any work is done and before anything is downloaded, and
+  // the only file that has to change to make that happen is `entitlements.ts`.
+  const verdict = canExport(template, 2)
+  if (!verdict.ok) {
+    toast(verdict.reason ?? '需要解锁')
+    return
+  }
   try {
     const { blob, filename, k, downgraded } = await exportPng({
       size: state.size,
@@ -153,7 +182,10 @@ document.getElementById('save')?.addEventListener('click', async () => {
       exif: state.exif,
       want: 2,
     })
-    if (downgraded) toast('图片过大，已按 1× 导出')
+    // The scale that was *drawn*, not the one that was asked for: the export
+    // walks down a ladder, so naming a fixed 1× here would describe a file the
+    // user is not holding the moment a fallback lands anywhere else.
+    if (downgraded) toast(`图片过大，已按 ${k}× 导出`)
     // iOS has no download attribute to speak of; the ceremony's long-press is
     // the save there, so handing it a file as well would only confuse it.
     if (!isIOS()) download(blob, filename)

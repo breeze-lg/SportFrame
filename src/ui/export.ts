@@ -14,17 +14,45 @@ export const MAX_CANVAS_EDGE = 16384
  * An edge-only guard cannot see this. A 4× export of this app's default 4:5
  * canvas (1152×1440 logical → 4608×5760 = 26.5 MP) has both edges legal and
  * still blows an iOS area cap — and 4× is the advertised premium tier (§10),
- * not an exotic request. 16,777,216 is the conservative floor of the WebKit
- * area caps rather than the raised one, because the device tier is not
- * detectable from script; every supported iPhone honours this number. It holds
- * every 2× export this app can produce (the default 2× is 6.6 MP) with room.
+ * not an exotic request. So this is the *floor*: the number every supported
+ * iPhone honours, the default budget of `fitsCanvas`, and the budget of every
+ * export rung but the premium one. It holds every 2× export this app can
+ * produce (the default 2× is 6.6 MP) with room.
  */
 export const MAX_CANVAS_AREA = 16_777_216
 
-export function fitsCanvas(size: Size, k: number): boolean {
+/**
+ * WebKit's raised iOS cap — 8192², the number the device-memory bump moved the
+ * limit to — and the area the 4× rung may spend.
+ *
+ * The 4× rung needs it: this app's default canvas is 1152×1440, so 4× is
+ * 4608×5760 = 26.5 MP — over the floor, inside this cap. 26.5 MP is also what
+ * §10 sells as the premium unlock, and a tier the export path downgrades on
+ * *every* platform, desktop Chromium included, is not a tier.
+ *
+ * Spending past the floor is a bet on the device, because the device tier is
+ * not readable from script. The bet is not taken blind: a canvas over the floor
+ * is asked whether it holds pixels before it is encoded (`holdsPixels`), and
+ * the rungs below it are held to the floor, so a device that refuses the large
+ * canvas still gets the best file it can hold. WebKit's cap tracks device
+ * memory, so a device that admits this canvas is one WebKit judged able to
+ * hold it.
+ */
+export const PREMIUM_CANVAS_AREA = 67_108_864
+
+/**
+ * The area a rung may spend. Only 4× — the premium request — may exceed the
+ * floor. Every rung below it, and every fallback, must fit what every device
+ * honours, or it is not a fallback.
+ */
+export function areaBudget(k: number): number {
+  return k >= 4 ? PREMIUM_CANVAS_AREA : MAX_CANVAS_AREA
+}
+
+export function fitsCanvas(size: Size, k: number, budget: number = MAX_CANVAS_AREA): boolean {
   const W = size.W * k
   const H = size.H * k
-  return W <= MAX_CANVAS_EDGE && H <= MAX_CANVAS_EDGE && W * H <= MAX_CANVAS_AREA
+  return W <= MAX_CANVAS_EDGE && H <= MAX_CANVAS_EDGE && W * H <= budget
 }
 
 export function stamp(d: Date): string {
@@ -67,19 +95,63 @@ export type ExportOpts = {
   want?: 2 | 4
 }
 
+/** The export rungs, best first. `want` selects the top one. */
+const RUNGS = [4, 2, 1] as const
+
+/**
+ * The rungs a request may draw at, best first.
+ *
+ * The requested rung may spend `areaBudget(want)`; every rung *below* it must
+ * fit the floor, because a fallback that needs a device-tier bet is not a
+ * fallback — stepping down onto a canvas the device may blank would be a
+ * downgrade in name only. An empty answer means even 1× is over the floor: the
+ * caller draws at 1× anyway, so the encode's own failure is the message the
+ * user gets, naming the one thing they can act on.
+ */
+function rungsFor(size: Size, want: 2 | 4): number[] {
+  return RUNGS.filter(
+    (k) => k <= want && fitsCanvas(size, k, k === want ? areaBudget(k) : MAX_CANVAS_AREA),
+  )
+}
+
+/**
+ * Does this canvas actually hold the pixels drawn into it?
+ *
+ * An over-budget canvas fails *silently* — WebKit documents the draws as
+ * no-ops and hands `toBlob` a null — so "the call succeeded" is not evidence
+ * that the user got an image. This is the evidence: a pixel written and then
+ * read back. A canvas that stores nothing answers zeros to both reads, so the
+ * value compared against is one this code just wrote and no renderer produced.
+ * The original pixel is restored before the canvas is encoded, which keeps the
+ * check invisible in the file.
+ *
+ * `putImageData`/`getImageData` rather than `fillRect`: they ignore the
+ * transform, clip, alpha and composite state the renderer may have left on the
+ * context, so this cannot fail on a healthy canvas for a reason that belongs
+ * to the renderer.
+ */
+function holdsPixels(canvas: HTMLCanvasElement): boolean {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return false
+  try {
+    const before = ctx.getImageData(0, 0, 1, 1)
+    ctx.putImageData(new ImageData(new Uint8ClampedArray([1, 2, 3, 255]), 1, 1), 0, 0)
+    const after = ctx.getImageData(0, 0, 1, 1).data
+    ctx.putImageData(before, 0, 0)
+    return after[0] === 1 && after[1] === 2 && after[2] === 3 && after[3] === 255
+  } catch {
+    // A canvas that will not answer is a canvas that cannot be trusted. The
+    // rung below it is the recovery; this is not a crash.
+    return false
+  }
+}
+
 export async function exportPng(
   opts: ExportOpts,
 ): Promise<{ blob: Blob; filename: string; k: number; downgraded: boolean }> {
   const want = opts.want ?? 2
-  // `k` is widened deliberately: the fallback assigns 1, which is not one of
-  // the requested multipliers `want` is restricted to.
-  let k: number = want
-  let downgraded = false
-
-  if (!fitsCanvas(opts.size, k)) {
-    k = 1
-    downgraded = true
-  }
+  const rungs = rungsFor(opts.size, want)
+  const ladder = rungs.length > 0 ? rungs : [1]
 
   const draw = (scale: number) =>
     renderToCanvas(
@@ -93,27 +165,32 @@ export async function exportPng(
   const encode = (canvas: HTMLCanvasElement) =>
     new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'))
 
-  let canvas = draw(k)
-  let blob = await encode(canvas)
-
-  // The check above is a prediction; this is the recovery. Where the engine
-  // disagrees with it — an area cap the budget under-estimates, or plain memory
-  // pressure on a big canvas — WebKit fails *silently*: `toBlob` hands back
-  // null instead of throwing. Retry once at 1× before reporting failure, per
-  // spec §9's "catch, retry at lower scale, tell the user what happened".
-  // Already at 1×, or the size does not fit at 1× either, means no retry can
-  // help: fall through to the failure the user can act on.
-  if (!blob && k > 1 && fitsCanvas(opts.size, 1)) {
-    k = 1
-    downgraded = true
-    canvas = draw(k)
+  // One attempt per rung, best first, stopping at the first rung that yields a
+  // file. `fitsCanvas` above is the prediction; this loop is the recovery, and
+  // it covers both shapes of the engine's silent refusal — a null encode
+  // (WebKit's) and a canvas that took the draws and kept none of them — which
+  // is spec §9's "catch, retry at lower scale, tell the user what happened".
+  // `k` is widened deliberately: the ladder assigns rungs that are not one of
+  // the multipliers `want` is restricted to.
+  let k: number = want
+  let canvas: HTMLCanvasElement | null = null
+  let blob: Blob | null = null
+  for (const rung of ladder) {
+    k = rung
+    canvas = draw(rung)
+    // Only a rung that spends more than the floor is a bet on the device, and
+    // only a bet is verified: the rungs within the floor are the sizes every
+    // device honours, and asking them for a proof the budget already gives
+    // would put a `getImageData` on the default export path for nothing.
+    if (canvas.width * canvas.height > MAX_CANVAS_AREA && !holdsPixels(canvas)) continue
     blob = await encode(canvas)
+    if (blob) break
   }
 
-  if (!blob) throw new Error('导出失败：图片太大，请降低输出长边')
+  if (!blob || !canvas) throw new Error('导出失败：图片太大，请降低输出长边')
 
   const filename = `frame_${canvas.width}x${canvas.height}_${stamp(new Date())}.png`
-  return { blob, filename, k, downgraded }
+  return { blob, filename, k, downgraded: k !== want }
 }
 
 export const isIOS = (): boolean =>
