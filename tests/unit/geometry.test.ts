@@ -83,20 +83,69 @@ describe('matRect', () => {
 
 import { aspectOf } from '../../src/core/geometry'
 
-describe('[RF-1] extreme aspect ratios never letterbox', () => {
+describe('[RF-1] cover never letterboxes, for any source and any box', () => {
   it('covers a 4:5 frame from a 3:1 panorama', () => {
     const size = resolveSize('4:5', 1440)
     const fr = fitRect(size, aspectOf('orig', { width: 3000, height: 1000 }), 72, 0, 0)
     const c = cover(3000, 1000, fr.w, fr.h, 1)
     expect(c.w).toBeGreaterThanOrEqual(fr.w - 1e-9)
     expect(c.h).toBeGreaterThanOrEqual(fr.h - 1e-9)
+    expect(c.w / c.h).toBeCloseTo(3000 / 1000, 9)
   })
 
-  it('covers a 16:9 frame from a 1:3 portrait', () => {
-    const size = resolveSize('16:9', 1440)
-    const fr = fitRect(size, aspectOf('orig', { width: 1000, height: 3000 }), 72, 0, 0)
-    const c = cover(1000, 3000, fr.w, fr.h, 1)
-    expect(c.w).toBeGreaterThanOrEqual(fr.w - 1e-9)
-    expect(c.h).toBeGreaterThanOrEqual(fr.h - 1e-9)
+  // Coverage is a property of `cover` alone: for any source and any box, the
+  // rect it returns must be at least the box on both axes, so the photo
+  // overflows and gets cropped rather than letterboxed.
+  //
+  // This has to be probed with deliberately *mismatched* aspects. `fitRect`
+  // returns a rect whose aspect equals the aspect it was handed, so feeding
+  // `cover` a source of that same aspect makes both margins exactly zero for
+  // arithmetic reasons that cannot go wrong — an assertion that cannot fail.
+  // Pairing unrelated aspects is the only thing that exercises the crop.
+  const SOURCE_ASPECTS = [3, 1, 0.5, 1 / 3, 0.75, 1.6]
+  const BOX_ASPECTS = [4 / 5, 1, 16 / 9, 9 / 16, 1.5]
+
+  for (const srcAspect of SOURCE_ASPECTS) {
+    for (const boxAspect of BOX_ASPECTS) {
+      it(`covers a ${boxAspect.toFixed(3)} box from a ${srcAspect.toFixed(3)} source`, () => {
+        const iw = 1000
+        const ih = Math.round(iw / srcAspect)
+        const boxW = 800
+        const boxH = Math.round(boxW / boxAspect)
+
+        const c = cover(iw, ih, boxW, boxH, 1)
+
+        expect(c.w).toBeGreaterThanOrEqual(boxW - 1e-9)
+        expect(c.h).toBeGreaterThanOrEqual(boxH - 1e-9)
+        // the source aspect is preserved, so nothing is distorted
+        expect(c.w / c.h).toBeCloseTo(iw / ih, 9)
+      })
+    }
+  }
+})
+
+describe('[RF-1] zoom below 1 is an explicit opt-out of coverage', () => {
+  // `cover` computes s = max(boxW/iw, boxH/ih) * zoom. The max is what makes
+  // the rect cover at zoom 1 (equality on the binding axis, overflow on the
+  // other). Any zoom < 1 scales that cover scale down, so the binding axis
+  // lands at boxDim * zoom — strictly inside the box. Coverage therefore
+  // cannot hold below zoom 1 for any input, and it does not: the photo is
+  // deliberately under-filled, and a caller wanting edge-to-edge coverage
+  // must pass zoom >= 1. That is the only way it is used: the plan's render
+  // spine derives zoom from `background.zoom` (a percentage defaulting to 100,
+  // set to 118-148 by every built-in template) to keep the blurred backdrop
+  // oversized so the blur never reveals a bare canvas edge. The assertions
+  // below pin that truth rather than pretending coverage still holds.
+  it('covers exactly at zoom 1, and under-fills by exactly the zoom below it', () => {
+    const atOne = cover(3000, 1000, 800, 1000, 1)
+    expect(atOne.w).toBeGreaterThanOrEqual(800 - 1e-9)
+    expect(atOne.h).toBeGreaterThanOrEqual(1000 - 1e-9)
+
+    // source 3:1 into an 800x1000 box: the box height is the binding axis
+    const zoomed = cover(3000, 1000, 800, 1000, 0.5)
+    expect(zoomed.h).toBeCloseTo(1000 * 0.5, 9)
+    expect(zoomed.h).toBeLessThan(1000) // under-filled: a letterbox, not a cover
+    expect(zoomed.w).toBeGreaterThanOrEqual(800) // the free axis still overflows
+    expect(zoomed.w / zoomed.h).toBeCloseTo(3, 9) // still undistorted
   })
 })
