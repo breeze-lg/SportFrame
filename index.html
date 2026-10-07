@@ -64,6 +64,10 @@
     <div class="rail" id="rail"></div>
 
     <div class="acts">
+      <!-- Secondary, not primary: saving a template is a detour from the one
+           action this screen exists for, and `.btn-primary`'s `flex: 1` would
+           give the detour the larger half of the dock. -->
+      <button class="btn" id="saveTpl">存为模板</button>
       <button class="btn btn-primary" id="save">保存</button>
     </div>
   </aside>

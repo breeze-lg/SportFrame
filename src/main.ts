@@ -8,6 +8,8 @@ import { initTheme } from './ui/theme'
 import { createState } from './ui/state'
 import { toast } from './ui/toast'
 import { renderRail } from './ui/rail'
+import { loadCustom, saveCustom, browserStorage } from './ui/custom'
+import type { Template } from './core/types'
 import { wireInput } from './ui/input'
 import { readExif } from './core/exif'
 import {
@@ -122,6 +124,34 @@ document.getElementById('save')?.addEventListener('click', async () => {
     )
   } catch (e) {
     toast(e instanceof Error ? e.message : '导出失败')
+  }
+})
+
+/**
+ * 存为模板: the current settings, plus a name, become a record in storage.
+ *
+ * A copy, never the live template — `state.template` is one of the `TEMPLATES`
+ * singletons, and writing it under a fresh id would put a built-in's identity
+ * into a store that outlives this page load. `premium: false` because
+ * entitlement is checked against the built-in set and a saved copy is not a
+ * purchase; the id is a timestamp because two saves of the same style are two
+ * templates and collapsing them would lose one.
+ *
+ * Nothing is rendered from the result yet — the rail draws `TEMPLATES` and
+ * `pick` resolves through `getTemplate`, which only knows built-ins — so a
+ * failed write has to be told to the user out loud rather than implied by a
+ * chip that never appears.
+ */
+document.getElementById('saveTpl')?.addEventListener('click', () => {
+  if (!state.template) return
+  const name = (prompt('模板名称', state.template.name + ' 副本') || '').trim()
+  if (!name) return
+  const list = loadCustom(browserStorage())
+  const copy: Template = { ...state.template, id: `custom-${Date.now()}`, name, premium: false }
+  if (saveCustom(browserStorage(), [...list, copy])) {
+    toast(`已保存模板：${name}`)
+  } else {
+    toast('保存失败：浏览器存储不可用')
   }
 })
 
