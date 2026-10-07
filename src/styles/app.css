@@ -172,6 +172,22 @@ canvas#cv:not([width]) { visibility: hidden; }
   background: var(--brass);
   clip-path: polygon(100% 0, 100% 100%, 0 0);
 }
+/* A saved template wears the mat's own gesture: a bottom-weighted hairline,
+   the deeper-bottom-margin cue `frame.matBottom` draws inside the poster. It
+   says "yours", not "better" — so it is the bevel grey, the same hairline every
+   mount already has, and never `--brass`, which is the premium marker and the
+   only thing in this app allowed to look like metal. It rides on `::before`
+   (the corner brass uses) rather than `::after` (the inset ring `.on` uses), so
+   a saved template that is also selected shows both: the ring says selected,
+   the hairline says whose. */
+.print.custom::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  bottom: 3px;
+  border-top: 1px solid var(--bevel);
+}
 /* the chips are the app's second focus stop after the drop zone, and a border
    colour alone is a weak one at this size */
 .print:focus-visible,

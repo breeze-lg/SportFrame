@@ -8,7 +8,7 @@ import { initTheme } from './ui/theme'
 import { createState } from './ui/state'
 import { toast } from './ui/toast'
 import { renderRail } from './ui/rail'
-import { loadCustom, saveCustom, browserStorage } from './ui/custom'
+import { loadCustom, saveCustom, browserStorage, sessionStore } from './ui/custom'
 import type { Template } from './core/types'
 import { wireInput } from './ui/input'
 import { readExif } from './core/exif'
@@ -68,11 +68,54 @@ function draw(): void {
   })
 }
 
+/**
+ * Where saved templates live, and the whole of spec §9's degradation.
+ *
+ * `browserStorage()` answers `null` where the property itself throws (private
+ * mode, a blocked webview); a store that answers and *then* refuses a write
+ * (quota) only fails at `saveCustom`. Both are the same event to a user — the
+ * template is not going to be there tomorrow — so both set `browserStore` to
+ * null, and `saveStore()` becomes the one answer to "where do templates go":
+ * the same store for the write and for the read. That is what keeps a session
+ * list from being a *second* source the rail also reads, which is how one saved
+ * template becomes two chips.
+ */
+let browserStore: Storage | null = browserStorage()
+
+function saveStore(): Storage {
+  return browserStore ?? sessionStore()
+}
+
+/** What the user has saved, from whichever store is currently carrying it. */
+function savedTemplates(): Template[] {
+  return loadCustom(saveStore())
+}
+
+/**
+ * The rail's list: the built-ins first and in their authored order — they are
+ * the product's own recommendation, and what a first-time visitor is choosing
+ * between — then the user's saved templates, appended. A template you made is
+ * an addition to the nine the app ships with, not a substitute for them.
+ *
+ * Rendering and resolving read the same store, so every chip that is drawn is
+ * a chip that can be picked; this is the function both the boot and the save
+ * handler call, which is what makes a just-saved template appear without a
+ * reload.
+ */
+function paintRail(activeId: string | null): void {
+  const saved = savedTemplates()
+  renderRail(rail, [...TEMPLATES, ...saved], activeId, pick, new Set(saved.map((t) => t.id)))
+}
+
 function pick(id: string): void {
-  const t = getTemplate(id)
+  // Both lists. A saved template cannot collide with a built-in id, so the
+  // built-ins answer first and the saved list answers for the rest — the same
+  // merge `paintRail` draws, so a chip on the rail is never a chip that
+  // resolves to nothing.
+  const t = getTemplate(id) ?? savedTemplates().find((x) => x.id === id)
   if (!t) return
   state.template = t
-  renderRail(rail, TEMPLATES, id, pick)
+  paintRail(id)
   draw()
 }
 
@@ -128,7 +171,30 @@ document.getElementById('save')?.addEventListener('click', async () => {
 })
 
 /**
- * 存为模板: the current settings, plus a name, become a record in storage.
+ * Appends `copy` to the saved list and reports where it landed — `stored` in
+ * the browser's own store, `session` in memory only, or `failed` if even the
+ * memory write did not take. The caller tells the user which; a template that
+ * is real for this tab and a template that is real tomorrow are not the same
+ * promise.
+ *
+ * A refused write is spec §9's degradation: the copy moves to the session store
+ * rather than evaporating, and it takes everything the rail is showing with it,
+ * so a user who had templates on screen does not watch them disappear because
+ * the disk filled up. The write goes to the old store first and that store is
+ * abandoned only once it has refused, so the carried list is copied once and
+ * written once.
+ */
+function persist(copy: Template): 'stored' | 'session' | 'failed' {
+  const target = saveStore()
+  if (saveCustom(target, [...loadCustom(target), copy])) return browserStore ? 'stored' : 'session'
+  const carried = loadCustom(target)
+  browserStore = null
+  return saveCustom(saveStore(), [...carried, copy]) ? 'session' : 'failed'
+}
+
+/**
+ * 存为模板: the current settings, plus a name, become a record in the saved
+ * list — and, through `paintRail`, a chip on the rail, immediately.
  *
  * A copy, never the live template — `state.template` is one of the `TEMPLATES`
  * singletons, and writing it under a fresh id would put a built-in's identity
@@ -136,26 +202,28 @@ document.getElementById('save')?.addEventListener('click', async () => {
  * entitlement is checked against the built-in set and a saved copy is not a
  * purchase; the id is a timestamp because two saves of the same style are two
  * templates and collapsing them would lose one.
- *
- * Nothing is rendered from the result yet — the rail draws `TEMPLATES` and
- * `pick` resolves through `getTemplate`, which only knows built-ins — so a
- * failed write has to be told to the user out loud rather than implied by a
- * chip that never appears.
  */
 document.getElementById('saveTpl')?.addEventListener('click', () => {
-  if (!state.template) return
-  const name = (prompt('模板名称', state.template.name + ' 副本') || '').trim()
-  if (!name) return
-  const list = loadCustom(browserStorage())
-  const copy: Template = { ...state.template, id: `custom-${Date.now()}`, name, premium: false }
-  if (saveCustom(browserStorage(), [...list, copy])) {
-    toast(`已保存模板：${name}`)
-  } else {
-    toast('保存失败：浏览器存储不可用')
+  const template = state.template
+  if (!template) {
+    // The guard is right and the silence was not: a press that produces no
+    // dialog, no toast and no chip reads as a broken button.
+    toast('请先选择样式')
+    return
   }
+  const name = (prompt('模板名称', template.name + ' 副本') || '').trim()
+  if (!name) return
+  const copy: Template = { ...template, id: `custom-${Date.now()}`, name, premium: false }
+  const where = persist(copy)
+  // Before the toast, not after: what the user is told has to describe a rail
+  // they are already looking at.
+  paintRail(state.template?.id ?? null)
+  if (where === 'failed') toast('保存失败：浏览器存储不可用')
+  else if (where === 'session') toast(`已保存模板：${name}（仅本次会话，浏览器存储不可用）`)
+  else toast(`已保存模板：${name}`)
 })
 
-renderRail(rail, TEMPLATES, state.template?.id ?? null, pick)
+paintRail(state.template?.id ?? null)
 draw()
 
 // ---------------------------------------------------------------------------

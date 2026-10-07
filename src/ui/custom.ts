@@ -70,3 +70,41 @@ export function browserStorage(): Storage | null {
     return null
   }
 }
+
+/**
+ * Spec §9's session-only degradation, as a `Storage`: a browser that never
+ * gave us a store, or refuses a write halfway through the session, still gets a
+ * working 存为模板 for as long as the tab lives.
+ *
+ * It is a `Storage` and not a second list on purpose. Behind the same
+ * interface, `loadCustom` and `saveCustom` need no session branch, the caller
+ * keeps one read-modify-write path whether or not a browser store exists, and a
+ * template that went to memory is — to everything above this seam — a template
+ * that went to disk. A parallel array would be a second source of truth for the
+ * same list, and the rail reading both is how one saved template becomes two
+ * chips.
+ *
+ * A plain object with its own methods, never `Object.create(Storage.prototype)`:
+ * the reason we are here is that the real `Storage` is throwing, and inheriting
+ * from it would put the throwing implementation back into the chain.
+ *
+ * Memoised, so "the session store" is one store. Two calls that each minted a
+ * fresh `Map` would hand the caller a different list than the one it wrote to,
+ * and the second save would silently drop the first.
+ */
+let session: Storage | null = null
+
+export function sessionStore(): Storage {
+  if (!session) {
+    const m = new Map<string, string>()
+    session = {
+      get length() { return m.size },
+      clear: () => m.clear(),
+      getItem: (k: string) => m.get(k) ?? null,
+      key: (i: number) => Array.from(m.keys())[i] ?? null,
+      removeItem: (k: string) => { m.delete(k) },
+      setItem: (k: string, v: string) => { m.set(k, v) },
+    } as Storage
+  }
+  return session
+}
