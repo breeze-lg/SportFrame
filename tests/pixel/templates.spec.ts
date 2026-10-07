@@ -18,6 +18,8 @@ import { getTemplate } from '../../src/core/templates'
  *   wrote a rule for — a radius nudged, a colour shifted, a blur re-tuned.
  *   They are the price of testing a visual product, and the price is real: a
  *   deliberate template change makes them stale, and re-baselining is work.
+ *   There is one per template, not one per theme: the dark leg renders against
+ *   the light golden, and that reproduction is the cross-theme assertion.
  *
  * So: a red golden is a question, not a verdict. Decide which it is — an
  * unintended regression (fix the code, keep the golden) or a template you meant
@@ -42,9 +44,6 @@ const TEMPLATE_IDS = [
 const SIZE = { W: 480, H: 600 }
 
 const lum = (p: number[]) => 0.299 * p[0]! + 0.587 * p[1]! + 0.114 * p[2]!
-
-/** `tests/pixel/__screenshots__/`, per `snapshotPathTemplate` in the config. */
-const GOLDEN_DIR = resolve('tests/pixel/__screenshots__')
 
 const REBASELINE = [
   '',
@@ -147,25 +146,22 @@ for (const theme of ['light', 'dark'] as const) {
       for (let i = 3; i < px.length; i += 4) if (px[i] === 0) transparent++
       expect(transparent, `${id} left transparent pixels`).toBe(0)
 
-      // golden: catches unintended change
-      matchGolden(Buffer.from(px), `${id}-${theme}.rgba`)
+      // One golden per template, not one per theme. The artifact does not
+      // follow the chrome: `--mat` is `#FFFFFF` in both themes and every colour
+      // `render` paints is a literal or a template field, so the dark leg has
+      // to reproduce the light golden byte for byte. That is a *stronger* claim
+      // than the `-dark.rgba` file it replaces made — the renderer must produce
+      // the light render while the media query says dark, rather than two
+      // committed files having happened to agree on the day they were made —
+      // and it is why those nine files are gone.
+      //
+      // A theme-dependent renderer cannot be re-baselined out of this: both
+      // legs compare against this one file, so whichever render
+      // `--update-snapshots` last wrote, the other leg is red on the next run.
+      matchGolden(Buffer.from(px), `${id}-light.rgba`)
     })
   }
 }
-
-test('the poster is the same picture in both themes', async () => {
-  // The artifact does not follow the chrome: `--mat` is `#FFFFFF` in both
-  // themes and every colour `render` paints is a literal or a template field,
-  // so the light and dark goldens for a template are the same bytes. This is
-  // the assertion that makes the second golden per template worth its weight —
-  // without it, a renderer that started reading the theme would simply produce
-  // two different goldens and both would be committed.
-  for (const id of TEMPLATE_IDS) {
-    const light = readFileSync(resolve(GOLDEN_DIR, `${id}-light.rgba`))
-    const dark = readFileSync(resolve(GOLDEN_DIR, `${id}-dark.rgba`))
-    expect(dark.equals(light), `${id} renders differently in dark theme`).toBe(true)
-  }
-})
 
 // ---------------------------------------------------------------------------
 // The shadow branch
@@ -324,16 +320,28 @@ test.describe('the self-hosted faces', () => {
 // The preview indirection
 // ---------------------------------------------------------------------------
 
-/** Everything the photo and nothing else, so any pixel is a claim about which
- *  image reached the canvas. `blur: 0` and `darken: 0` keep the source's own
- *  colour intact. */
-const FULL_BLEED = {
+/**
+ * A frame at 80% of the canvas, so what is inside it is the photograph and
+ * what is around it is the background pass's own draw of the same source. On
+ * the 480×600 canvas below, the photograph covers x 48..432, y 60..540.
+ *
+ * `blur: 0` and `darken: 0` keep that source's own colour intact — a flat
+ * magenta stays exactly #FF00FF through a zero-radius blur — so one equality
+ * assertion covers both call sites of `photo.preview ?? photo.el` at once.
+ * That is the point of the 80: at `scale: 100` the photograph covered every
+ * pixel, the background pass could have drawn from `photo.el` unseen, and this
+ * probe would have been a claim about the cheap call site only. The background
+ * is the expensive one — it uploads and blurs the source at canvas-plus-padding
+ * size on every render — and a downscale ignored there is a slow app rather
+ * than a wrong poster, which is exactly what a correctness suite misses.
+ */
+const PROBE = {
   id: 'probe',
   name: 'probe',
   layout: { kind: 'single' as const },
   canvas: { ratio: '4:5' as const },
   background: { mode: 'blur' as const, blur: 0, darken: 0, zoom: 100 },
-  frame: { scale: 100, radius: 0, mat: 0, matBottom: 0, shadow: 0 },
+  frame: { scale: 80, radius: 0, mat: 0, matBottom: 0, shadow: 0 },
 }
 
 test.describe('the preview downscale', () => {
@@ -354,6 +362,12 @@ test.describe('the preview downscale', () => {
    * survives every correctness test — would pass everything else in this file.
    * Here the two differ visibly: the preview is a flat colour of the same
    * dimensions, and the render has to be that colour.
+   *
+   * `render` reads the source in two places — the background pass and the photo
+   * pass — and each can regress on its own. So the samples below sit on both
+   * sides of the frame's edge (see `PROBE`): reverting *either* occurrence to
+   * `photo.el` on its own reddens this test, and that is the whole reason the
+   * frame is not full-bleed.
    */
   test('render draws the downscale, not the full-size el', async ({ page }) => {
     const r = await page.evaluate(async (template) => {
@@ -380,6 +394,10 @@ test.describe('the preview downscale', () => {
 
       const W = 480
       const H = 600
+      // named, so a failure says which pass disagreed. The three photo samples
+      // are 50px or more inside the frame's edge (x 48..432, y 60..540 at
+      // `frame.scale: 80`), clear of the clip and of the 1px overdraw; the
+      // corner is 28px outside it, and only the background pass can reach it.
       const shot = (photo: any) => {
         f.setSize(W, H)
         const ctx = f.ctx()
@@ -393,7 +411,12 @@ test.describe('the preview downscale', () => {
           text: {},
           exif: null,
         })
-        return [f.pixel(240, 300), f.pixel(60, 60), f.pixel(420, 540)]
+        return {
+          photoCentre: f.pixel(240, 300),
+          photoUpperLeft: f.pixel(120, 160),
+          photoLowerRight: f.pixel(380, 480),
+          background: f.pixel(20, 20),
+        }
       }
 
       const dims = { width: full.naturalWidth, height: full.naturalHeight, name: 's', exif: null }
@@ -405,20 +428,27 @@ test.describe('the preview downscale', () => {
         // the reference: the preview image drawn as the only source
         previewAsEl: shot({ el: preview, ...dims }),
       }
-    }, FULL_BLEED)
+    }, PROBE)
 
-    // with a preview in hand the preview is what reaches the canvas
-    expect(r.both).toEqual(r.previewAsEl)
+    // With a preview in hand the preview is what reaches the canvas — in the
+    // photo pass and in the background pass, and the second is the one that
+    // costs: `drawBackground` scales the source up to the canvas plus three
+    // blur radii of padding, so a `photo.el` there paints 4 MP where 4 MP was
+    // meant to be 4 MP downscaled, on every frame. That is a slow app, not a
+    // wrong poster, and no other test in this file can see it.
+    //
+    // The samples are named, so `toEqual`'s own diff names the point that
+    // disagreed: `background` is the corner, which only `drawBackground` draws.
+    expect(r.both, 'the render did not draw the preview').toEqual(r.previewAsEl)
 
     // and it is visibly not the full-size image — the assertion above would be
     // vacuous if the two sources happened to look alike
     let spread = 0
-    const elOnly = r.elOnly as number[][]
-    const previewAsEl = r.previewAsEl as number[][]
-    for (let i = 0; i < elOnly.length; i++) {
-      for (let ch = 0; ch < 3; ch++) {
-        spread = Math.max(spread, Math.abs(elOnly[i]![ch]! - previewAsEl[i]![ch]!))
-      }
+    const elOnly = r.elOnly as Record<string, number[]>
+    const previewAsEl = r.previewAsEl as Record<string, number[]>
+    for (const [where, a] of Object.entries(elOnly)) {
+      const b = previewAsEl[where]!
+      for (let ch = 0; ch < 3; ch++) spread = Math.max(spread, Math.abs(a[ch]! - b[ch]!))
     }
     expect(spread, 'the fixtures are too alike to tell apart').toBeGreaterThan(60)
   })
@@ -534,13 +564,24 @@ test.describe('mat-anchored text at k = 2', () => {
     )
 
     for (const k of [1, 2]) {
-      const band = bands[String(k)]!
-      const found = ink[k as 1 | 2]
-      // without ink on both sides the scaling claim below is vacuous
-      expect(found.rows, `no title ink found at k=${k}`).toBeGreaterThan(5)
-      expect(found.first!, `ink at k=${k} starts above the band`).toBeGreaterThan(band.top)
-      expect(found.last!, `ink at k=${k} runs past the mat`).toBeLessThan(band.bottom)
+      // without ink on both sides every scaling claim below is vacuous
+      expect(ink[k as 1 | 2].rows, `no title ink found at k=${k}`).toBeGreaterThan(5)
     }
+
+    // Where the ink sits *within* the band, in logical units — the claim the
+    // pair this replaced only appeared to make. `first > band.top` and
+    // `last < band.bottom` could not fail: the scan runs from
+    // `round(band.top) + 1` to `round(band.bottom) - 3`, so both were true of
+    // every row it could possibly return, and `rows > 5` was carrying them.
+    // This one the window can violate, because the band edge it is measured
+    // against comes from the layout functions while the row comes from the
+    // pixels. Dropping the `* k` on `matBottom` moves the ink 64.5 device
+    // pixels against the band's top edge at k=2 — sixteen times the tolerance.
+    const intoBand = (k: 1 | 2) => ink[k].first! - bands[String(k)]!.top
+    expect(
+      Math.abs(intoBand(2) - intoBand(1) * 2),
+      `ink sits ${intoBand(1)}px into the band at k=1 and ${intoBand(2)}px at k=2`,
+    ).toBeLessThanOrEqual(4)
 
     // The same place, in logical units: every row at k=2 is the k=1 row
     // doubled. Dropping the `* k` from `matBottom` moves the ink by
