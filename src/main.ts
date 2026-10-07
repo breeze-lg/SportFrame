@@ -3,6 +3,7 @@ import './styles/app.css'
 import { initTheme } from './ui/theme'
 import { drawMat } from './core/mat'
 import { drawBackground } from './core/background'
+import { drawText, measureToFit, frameFont } from './core/text'
 
 initTheme()
 
@@ -38,6 +39,12 @@ if (new URLSearchParams(location.search).has('dev')) {
       return [d[0]!, d[1]!, d[2]!, d[3]!]
     },
   }
-  ;(window as unknown as { __frameCore: unknown }).__frameCore = { drawMat, drawBackground }
+  ;(window as unknown as { __frameCore: unknown }).__frameCore = {
+    drawMat,
+    drawBackground,
+    drawText,
+    measureToFit,
+    frameFont,
+  }
   ;(window as unknown as { __frame: typeof api }).__frame = api
 }
