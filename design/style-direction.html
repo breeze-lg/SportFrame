@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>风格方向 · 装裱</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..600;1,6..72,300..400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   装裱 — token system
+   卡纸 (--mat) is the EXPORTED ARTIFACT and never changes with theme.
+   Everything else is chrome and follows the theme.
+   ============================================================ */
+:root{
+  color-scheme:light;
+
+  /* --- theme-agnostic --- */
+  --mat:#FFFFFF;                    /* 卡纸 — the framed output. Always white, both themes. */
+  --bevel-mat:rgba(28,27,24,.09);   /* the cut line, on a white mat */
+  --serif:'Newsreader',Georgia,'Songti SC',serif;
+  --sans:'IBM Plex Sans',-apple-system,'PingFang SC','Helvetica Neue',sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  --raw:url('../sample/samples-from-x9-pro-with-some-editing-v0-m6wmpeint76g1.webp');
+
+  /* --- light: a gallery wall --- */
+  --wall:#E9E8E3;        /* 墙 — app background */
+  --wall-hi:#F1F0EC;     /* light from above */
+  --wall-lo:#E2E1DB;
+  --surface:#FFFFFF;     /* panels, dock, buttons — raised chrome */
+  --bevel:#D6D4CD;       /* every hairline */
+  --rule:#EFEEE9;        /* hairline inside a surface */
+  --ink:#1C1B18;         /* text, actions, filled track */
+  --action-bg:#1C1B18;   /* inverted surfaces: primary button, toast */
+  --action-fg:#E9E8E3;
+  --body:#33312C;        /* long-form copy */
+  --label:#3A3833;       /* control labels */
+  --quiet:#7A776E;       /* secondary */
+  --faint:#A9A69C;       /* hints, disabled, mono tags */
+  --brass:#8A6A2F;       /* PREMIUM ONLY */
+  --brass-line:rgba(138,106,47,.34);
+  --brass-wash:rgba(138,106,47,.05);
+  --device:#EDECE7;      /* phone body */
+  --device-line:#C9C7BE;
+  --lift:0 1px 2px rgba(28,27,24,.05),0 12px 28px -10px rgba(28,27,24,.20);
+  --deep:0 2px 4px rgba(28,27,24,.06),0 34px 64px -22px rgba(28,27,24,.34);
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+
+  /* --- dark: the same room, lights off --- */
+  --wall:#191815;
+  --wall-hi:#232019;
+  --wall-lo:#121110;
+  --surface:#211F1C;     /* chrome lifts by being LIGHTER than the wall, since shadows die */
+  --bevel:#3A3833;
+  --rule:#2C2A26;
+  --ink:#EDEBE5;
+  --action-bg:#C9C5BB;   /* pulled back from --ink so the white mat still outranks the button */
+  --action-fg:#191815;
+  --body:#C9C5BB;
+  --label:#B8B3A8;
+  --quiet:#8B877C;
+  --faint:#5E5A52;
+  --brass:#BE9A4A;       /* raised in value to stay legible on dark */
+  --brass-line:rgba(190,154,74,.36);
+  --brass-wash:rgba(190,154,74,.07);
+  --device:#26241F;
+  --device-line:#403D37;
+  --lift:0 1px 2px rgba(0,0,0,.5),0 12px 28px -10px rgba(0,0,0,.7);
+  --deep:0 2px 4px rgba(0,0,0,.6),0 34px 64px -22px rgba(0,0,0,.85);
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--wall); color:var(--ink);
+  font-family:var(--sans); font-size:14px; line-height:1.6;
+  background-image:linear-gradient(180deg,var(--wall-hi) 0%,var(--wall) 42%,var(--wall-lo) 100%);
+  background-attachment:fixed;
+  transition:background-color .25s ease,color .25s ease;
+}
+.page{max-width:1080px;margin:0 auto;padding:0 28px 120px}
+:focus-visible{outline:2px solid var(--ink);outline-offset:3px;border-radius:1px}
+
+/* ---- masthead ---- */
+.mast{padding:76px 0 44px;border-bottom:1px solid var(--bevel);position:relative}
+.mast h1{
+  font-family:var(--serif);font-optical-sizing:auto;font-weight:400;
+  font-size:clamp(46px,7vw,74px);line-height:1;letter-spacing:-.01em;margin:0;
+}
+.mast h1 em{font-style:italic;font-weight:300}
+.mast .latin{font-family:var(--mono);font-size:11px;color:var(--quiet);margin-top:18px;letter-spacing:.02em}
+.mast p{
+  font-family:var(--serif);font-size:clamp(17px,2.1vw,21px);line-height:1.55;
+  max-width:56ch;margin:26px 0 0;color:var(--body);
+}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.mast>*{animation:rise .7s cubic-bezier(.2,.7,.3,1) backwards}
+.mast .latin{animation-delay:.06s}.mast p{animation-delay:.12s}
+@media (prefers-reduced-motion:reduce){.mast>*{animation:none}}
+
+/* theme switch */
+.seg{
+  position:absolute;top:78px;right:0;display:flex;border:1px solid var(--bevel);
+  border-radius:2px;overflow:hidden;background:var(--surface);
+}
+.segbtn{
+  font-family:var(--sans);font-size:12px;padding:7px 15px;border:0;cursor:pointer;
+  background:transparent;color:var(--quiet);transition:.16s;
+}
+.segbtn+.segbtn{border-left:1px solid var(--bevel)}
+.segbtn.on{background:var(--ink);color:var(--wall)}
+@media (max-width:620px){.seg{position:static;margin-top:26px;width:max-content}}
+
+/* ---- sections ---- */
+section{padding:64px 0 8px;border-bottom:1px solid var(--bevel)}
+section:last-of-type{border-bottom:0}
+h2{font-family:var(--serif);font-weight:400;font-size:26px;line-height:1.2;margin:0 0 8px;letter-spacing:-.005em}
+.sub{color:var(--quiet);font-size:13.5px;max-width:62ch;margin:0 0 34px;line-height:1.65}
+
+/* ---- palette ---- */
+.swatches{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+.sw{margin:0}
+.sw .chip{height:104px;border-radius:2px;border:1px solid var(--bevel);box-shadow:var(--lift);transition:.25s}
+.sw dt{font-weight:600;font-size:13px;margin-top:11px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.sw dt span{font-family:var(--mono);font-weight:400;font-size:10.5px;color:var(--quiet);text-transform:lowercase}
+.sw dd{margin:3px 0 0;font-size:12px;color:var(--quiet);line-height:1.5}
+.c-wall{background:var(--wall)}.c-mat{background:var(--mat)}
+.c-bevel{background:var(--bevel)}.c-ink{background:var(--ink)}
+.c-quiet{background:var(--quiet)}.c-brass{background:var(--brass)}
+.c-fixed{position:relative}
+.c-fixed::after{content:'';position:absolute;inset:0;border:2px dashed var(--brass);border-radius:2px}
+
+.note{
+  margin-top:26px;padding:16px 18px;background:var(--surface);border:1px solid var(--bevel);
+  border-radius:2px;font-size:13px;line-height:1.65;color:var(--body);max-width:70ch;transition:.25s;
+}
+.note b{font-weight:600;color:var(--ink)}
+.rules{list-style:none;margin:22px 0 0;padding:0;max-width:74ch;counter-reset:r}
+.rules li{
+  counter-increment:r;position:relative;padding:0 0 0 42px;margin:0 0 16px;
+  font-size:13.5px;line-height:1.7;color:var(--body);
+}
+.rules li::before{
+  content:counter(r);position:absolute;left:0;top:1px;width:22px;height:22px;
+  border:1px solid var(--bevel);border-radius:2px;color:var(--quiet);
+  font-family:var(--mono);font-size:10.5px;display:flex;align-items:center;justify-content:center;
+}
+.rules b{font-weight:600;color:var(--ink)}
+
+/* ---- type ---- */
+.spec{border:1px solid var(--bevel);background:var(--surface);border-radius:2px;padding:6px 26px 14px;box-shadow:var(--lift);transition:.25s}
+.spec-row{display:flex;align-items:baseline;gap:22px;padding:19px 0;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+.spec-row:last-child{border-bottom:0}
+.spec-tag{font-family:var(--mono);font-size:10px;color:var(--faint);flex:0 0 156px;line-height:1.5}
+.spec-demo{flex:1 1 auto;min-width:220px;color:var(--ink)}
+.t-display{font-family:var(--serif);font-size:clamp(34px,5vw,52px);line-height:1.05;font-weight:400;letter-spacing:-.01em}
+.t-title{font-family:var(--serif);font-size:23px;line-height:1.25;font-weight:400}
+.t-body{font-family:var(--sans);font-size:14px;line-height:1.66;max-width:44ch}
+.t-label{font-family:var(--sans);font-size:12.5px;color:var(--label)}
+.t-plate{font-family:var(--mono);font-size:10.5px;letter-spacing:.035em;color:var(--quiet)}
+
+/* ---- bevel device ---- */
+.bevel-wrap{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}
+@media (max-width:720px){.bevel-wrap{grid-template-columns:1fr;gap:28px}}
+.explode{position:relative;padding:46px;background:var(--mat);border-radius:2px;box-shadow:var(--deep)}
+.explode::before{content:'';position:absolute;inset:14px;border:1px solid var(--bevel-mat);border-radius:1px;pointer-events:none}
+.explode .tag{position:absolute;font-family:var(--mono);font-size:9.5px;color:#A9A69C;letter-spacing:.04em}
+.tag-a{top:15px;left:20px}.tag-b{bottom:15px;right:20px}
+.bevel-copy h3{font-family:var(--serif);font-weight:400;font-size:20px;margin:0 0 12px}
+.bevel-copy p{margin:0 0 14px;font-size:13.5px;line-height:1.7;color:var(--body);max-width:48ch}
+.bevel-copy ul{margin:0;padding-left:0;list-style:none}
+.bevel-copy li{font-size:13px;line-height:1.8;color:var(--quiet);padding-left:16px;position:relative}
+.bevel-copy li::before{content:'';position:absolute;left:0;top:.72em;width:6px;height:1px;background:var(--faint)}
+
+/* ---- the raw photo crop (extracted from the sample) ---- */
+.rawshot{
+  aspect-ratio:600/804; background-image:var(--raw);
+  background-size:106.6% 133.5%; background-position:50% 44%; background-repeat:no-repeat;
+}
+
+/* ---- framed output examples ---- */
+.outputs{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:30px}
+figure{margin:0}
+.mat-frame{background:var(--mat);border-radius:2px;box-shadow:var(--deep);position:relative}
+.mat-frame::after{content:'';position:absolute;inset:5px;border:1px solid var(--bevel-mat);border-radius:1px;pointer-events:none}
+figcaption{margin-top:14px;font-size:12.5px;color:var(--quiet);display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+figcaption b{font-weight:600;color:var(--ink);font-size:13px}
+figcaption span{font-family:var(--mono);font-size:10px}
+
+/* template: 样张 — spec sheet (all inner colours fixed: this is the artifact) */
+.tpl-spec{padding:26px 26px 22px}
+.tpl-spec .rawshot{width:100%}
+.tpl-spec .plate{display:flex;gap:20px;justify-content:center;margin-top:20px;font-family:var(--mono);font-size:8.5px;color:#3A3833;letter-spacing:.03em}
+.tpl-spec .brand{font-family:var(--mono);font-size:9px;letter-spacing:.30em;color:#1C1B18;text-align:center;margin-bottom:18px}
+/* template: 拍立得 */
+.tpl-pol{background:#fff;padding:13px 13px 62px}
+.tpl-pol .rawshot{width:100%}
+.tpl-pol .hand{font-family:var(--serif);font-style:italic;font-size:15px;color:#4A4740;margin-top:-46px;padding-left:6px}
+/* template: 留白 */
+.tpl-lp{background:#fff;padding:9% 9% 11%;display:flex;flex-direction:column;gap:12px}
+.tpl-lp .rawshot{width:100%}
+.tpl-lp .cap{font-family:var(--sans);font-size:9px;color:#8A867C;letter-spacing:.06em}
+
+/* ---- components ---- */
+.parts{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:34px}
+.part h3{font-size:12.5px;font-weight:600;margin:0 0 16px;color:var(--label)}
+.part .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
+.btn{
+  font-family:var(--sans);font-size:14px;padding:11px 22px;border-radius:2px;cursor:pointer;
+  border:1px solid var(--bevel);background:var(--surface);color:var(--ink);transition:.16s;
+}
+.btn:hover{border-color:var(--quiet)}
+.btn-primary{
+  background:var(--action-bg);border-color:var(--action-bg);color:var(--action-fg);
+  clip-path:polygon(7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%,0 7px);
+  padding:12px 24px;
+}
+.btn-primary:hover{opacity:.88}
+.btn:active{transform:translateY(1px)}
+
+/* template contact prints — chrome, so they follow the theme */
+.prints{display:flex;gap:10px;flex-wrap:wrap}
+.print{
+  width:58px;height:72px;border:1px solid var(--bevel);border-radius:2px;background:var(--surface);
+  padding:3px;position:relative;cursor:pointer;transition:.16s;
+}
+.print .rawshot{width:100%;height:100%;background-size:cover;background-position:50% 44%;aspect-ratio:auto}
+.print.on{border-color:var(--ink);box-shadow:var(--lift)}
+.print.on::after{content:'';position:absolute;inset:3px;border:1px solid var(--ink);border-radius:1px;opacity:.55}
+.print.brass::before{
+  content:'';position:absolute;top:-1px;right:-1px;width:11px;height:11px;background:var(--brass);
+  clip-path:polygon(100% 0,100% 100%,0 0);
+}
+
+/* slider */
+.slider{width:100%;max-width:300px}
+.slider .lab{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px}
+.slider .lab b{font-weight:400;font-size:12.5px;color:var(--label)}
+.slider .lab i{font-family:var(--mono);font-style:normal;font-size:11px;color:var(--quiet)}
+.slider .track{height:2px;background:var(--bevel);position:relative;border-radius:1px}
+.slider .track::before{content:'';position:absolute;left:0;top:0;height:2px;width:58%;background:var(--ink)}
+.slider .track::after{
+  content:'';position:absolute;left:58%;top:50%;width:15px;height:15px;margin:-7.5px 0 0 -7.5px;
+  background:var(--surface);border:1.5px solid var(--ink);border-radius:50%;
+}
+
+/* spec plate */
+.plate-demo{display:flex;gap:18px;font-family:var(--mono);font-size:10.5px;color:var(--label)}
+.plate-demo b{font-weight:500}
+
+/* toast — shares the inverted-surface pair with the primary button */
+.toast{
+  display:inline-flex;align-items:center;gap:9px;background:var(--action-bg);color:var(--action-fg);
+  font-size:12.5px;padding:9px 16px;border-radius:2px;box-shadow:var(--lift);
+}
+.toast .rawshot{width:16px;height:16px;border-radius:1px;background-size:cover;background-position:50% 44%;aspect-ratio:auto;flex:none}
+
+/* premium marker */
+.plaque{
+  display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--brass);
+  border:1px solid var(--brass-line);background:var(--brass-wash);
+  padding:5px 11px;border-radius:2px;
+}
+.plaque::before{content:'';width:6px;height:6px;background:var(--brass);border-radius:50%}
+
+/* ---- mockups ---- */
+.mock-stage{display:flex;justify-content:center;padding:8px 0 0}
+
+/* phone */
+.phone{
+  width:390px;height:844px;border-radius:46px;background:var(--device);flex:none;
+  border:1px solid var(--device-line);padding:11px;box-shadow:var(--deep);position:relative;transition:.25s;
+}
+.phone::after{
+  content:'';position:absolute;top:22px;left:50%;transform:translateX(-50%);
+  width:104px;height:26px;background:var(--device);border-radius:14px;z-index:9;
+}
+.screen{
+  width:100%;height:100%;border-radius:36px;overflow:hidden;background:var(--wall);
+  display:flex;flex-direction:column;position:relative;
+  background-image:linear-gradient(180deg,var(--wall-hi),var(--wall) 46%,var(--wall-lo));
+}
+.statusbar{
+  height:52px;flex:none;display:flex;align-items:flex-end;justify-content:space-between;
+  padding:0 26px 7px;font-family:var(--mono);font-size:10px;color:var(--quiet);
+}
+.sysicons{display:flex;align-items:flex-end;gap:6px}
+.bars{display:flex;align-items:flex-end;gap:1.5px;height:8px}
+.bars b{width:2px;background:var(--quiet);border-radius:.5px}
+.bars b:nth-child(1){height:3px}.bars b:nth-child(2){height:5px}.bars b:nth-child(3){height:8px}
+.batt{width:15px;height:8px;border:1px solid var(--quiet);border-radius:2px;position:relative}
+.batt::before{content:'';position:absolute;top:1.5px;bottom:1.5px;left:1.5px;width:7px;background:var(--quiet);border-radius:1px}
+.appbar{flex:none;display:flex;align-items:baseline;justify-content:space-between;padding:6px 22px 10px}
+.appbar .mark{font-family:var(--serif);font-size:19px;letter-spacing:.02em}
+.appbar .out{font-family:var(--mono);font-size:10px;color:var(--quiet)}
+.wall-area{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:8px 30px 0;min-height:0}
+.artwork{width:100%;max-width:262px}
+.artwork .mat-frame{padding:13px}
+.artwork .rawshot{width:100%;display:block}
+.wall-plate{font-family:var(--mono);font-size:9px;color:var(--quiet);letter-spacing:.05em;display:flex;gap:13px}
+.dock{flex:none;background:var(--surface);border-top:1px solid var(--bevel);transition:.25s}
+.rail-h{display:flex;justify-content:space-between;align-items:baseline;padding:13px 22px 9px}
+.rail-h b{font-weight:400;font-size:12.5px;color:var(--label)}
+.rail-h span{font-family:var(--mono);font-size:10px;color:var(--faint)}
+.rail{display:flex;gap:9px;padding:0 22px 14px;overflow:hidden}
+.rail .print{width:50px;height:62px}
+.acts{display:flex;gap:9px;padding:0 22px 26px}
+.acts .btn{flex:1;text-align:center}
+.acts .btn-primary{flex:1.35}
+
+/* desktop */
+.desk{
+  width:1240px;height:790px;border-radius:12px;overflow:hidden;flex:none;
+  border:1px solid var(--device-line);box-shadow:var(--deep);background:var(--wall);
+  display:flex;background-image:linear-gradient(160deg,var(--wall-hi),var(--wall) 50%,var(--wall-lo));
+}
+.desk-rail{
+  width:150px;flex:none;background:var(--surface);border-right:1px solid var(--bevel);
+  padding:20px 16px;display:flex;flex-direction:column;gap:14px;overflow:hidden;
+}
+.desk-rail .mark{font-family:var(--serif);font-size:17px;margin-bottom:2px}
+.desk-rail .out{font-family:var(--mono);font-size:9.5px;color:var(--quiet);margin-bottom:9px}
+.desk-rail .print{width:100%;height:86px}
+.desk-wall{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;min-width:0}
+.desk-art{width:396px}
+.desk-art .mat-frame{padding:19px}
+.desk-art .rawshot{width:100%;display:block}
+.desk-tools{
+  width:250px;flex:none;background:var(--surface);border-left:1px solid var(--bevel);
+  padding:22px 20px;display:flex;flex-direction:column;gap:22px;
+}
+.desk-tools h4{margin:0;font-size:12.5px;font-weight:600;color:var(--label)}
+.deskscale{transform-origin:top center}
+@media (max-width:1300px){.deskscale{transform:scale(.78);height:640px}}
+@media (max-width:1040px){.deskscale{transform:scale(.60);height:500px}}
+@media (max-width:820px){.deskscale{transform:scale(.42);height:360px}}
+@media (max-width:560px){
+  .deskscale{transform:scale(.28);height:250px}
+  .phone{transform:scale(.82);transform-origin:top center;height:700px}
+}
+
+/* ---- export ceremony ---- */
+.ceremony{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center;padding:14px 0 30px}
+@media (max-width:760px){.ceremony{grid-template-columns:1fr;gap:26px}}
+.ceremony .rawshot{width:100%;max-width:230px;margin:0 auto;display:block}
+.ceremony-copy h3{font-family:var(--serif);font-weight:400;font-size:21px;margin:0 0 12px}
+.ceremony-copy p{margin:0 0 16px;font-size:13.5px;line-height:1.7;color:var(--body);max-width:46ch}
+
+footer{padding:56px 0 0;color:var(--faint);font-family:var(--mono);font-size:10.5px}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="mast">
+    <div class="seg" role="group" aria-label="主题">
+      <button class="segbtn" data-t="light">亮</button>
+      <button class="segbtn" data-t="dark">暗</button>
+    </div>
+    <h1>装裱 <em>Mounting</em></h1>
+    <div class="latin">STYLE DIRECTION — LIUBAI / FRAME STUDIO</div>
+    <p>这款产品把一张照片变成一件挂上墙的作品。所以界面本身就用装裱的材料逻辑来建造：卡纸的白、斜口的细线、留出的空。界面不上色——屏幕上唯一的颜色来自用户的照片。亮和暗是同一间屋子，关灯前后。</p>
+  </header>
+
+  <section>
+    <h2>色</h2>
+    <p class="sub">六个值。墙比卡纸暗一档，卡纸才是纯白——真实装裱就是这样，卡纸之所以显白，是因为它比墙亮。铜色是唯一的有彩色，只用于付费标记，出现在整屏不超过指甲盖大的地方。右上角可以切到暗色，下面每个值都会跟着换。</p>
+    <dl class="swatches">
+      <div class="sw"><div class="chip c-wall"></div><dt>墙 <span data-light="#E9E8E3" data-dark="#191815">#E9E8E3</span></dt><dd>应用底色。照片挂在这上面</dd></div>
+      <div class="sw"><div class="chip c-mat c-fixed"></div><dt>卡纸 <span data-light="#FFFFFF" data-dark="#FFFFFF">#FFFFFF</span></dt><dd>导出成品本体。两套主题里都不变</dd></div>
+      <div class="sw"><div class="chip c-bevel"></div><dt>斜口 <span data-light="#D6D4CD" data-dark="#3A3833">#D6D4CD</span></dt><dd>所有分隔线，1px，不做圆角</dd></div>
+      <div class="sw"><div class="chip c-ink"></div><dt>墨 <span data-light="#1C1B18" data-dark="#EDEBE5">#1C1B18</span></dt><dd>正文、主操作、滑杆已填充段</dd></div>
+      <div class="sw"><div class="chip c-quiet"></div><dt>灰 <span data-light="#7A776E" data-dark="#8B877C">#7A776E</span></dt><dd>次要说明、参数标签</dd></div>
+      <div class="sw"><div class="chip c-brass"></div><dt>铜 <span data-light="#8A6A2F" data-dark="#BE9A4A">#8A6A2F</span></dt><dd>仅付费。画廊铜牌的颜色</dd></div>
+    </dl>
+    <div class="note"><b>为什么不用强调色。</b>一个照片工具最该做的是让用户自己的照片成为屏幕上最饱和的东西。按钮、标签、选中态全部用墨与线表达之后，照片自然浮起来。这也让付费标记变得值钱：铜色是屏幕上有颜色的唯一非照片元素。</div>
+  </section>
+
+  <section>
+    <h2>暗色不是反色</h2>
+    <p class="sub">把亮色比例反过来会得到一个骗人的界面。这里的第一条规矩是：卡纸永远不变——屏幕上那张白卡纸是导出成品的预览，它必须和用户拿到的文件长得一样。变的只有墙、面板和线。</p>
+    <ol class="rules">
+      <li><b>卡纸不动。</b>它是成品，不是界面。暗色下这张白卡纸微微发光，正好就是真实房间里相框的样子。</li>
+      <li><b>立面靠亮度，不靠影子。</b>亮色下面板用阴影抬起来；暗色下阴影几乎看不见，所以面板改成比墙亮一档（<span style="font-family:var(--mono);font-size:12px">#211F1C</span> 对 <span style="font-family:var(--mono);font-size:12px">#191815</span>）。</li>
+      <li><b>细线翻个面。</b>斜口在亮色下比底暗，在暗色下必须比底亮，否则整张网就消失了。</li>
+      <li><b>铜提亮。</b><span style="font-family:var(--mono);font-size:12px">#8A6A2F</span> 在暗底上会糊掉，所以暗色里用 <span style="font-family:var(--mono);font-size:12px">#BE9A4A</span>。它仍然是铜，不是金色——付费标记不能变成装饰。</li>
+      <li><b>缩略图跟着主题走。</b>模板缩略图是界面，不是成品。整屏只有正中间那一张大的是真卡纸，其余都是镀铬件——这样层级才不会乱。</li>
+      <li><b>主操作退一档。</b>亮色下主按钮是满墨实心块；暗色下如果照搬成满白块，就会和卡纸抢主角。所以暗色里它用 <span style="font-family:var(--mono);font-size:12px">#C9C5BB</span>——比卡纸暗一档，仍然是屏幕上最重的铬件。</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>字</h2>
+    <p class="sub">两套字体，对应这门生意的两种语言：美术馆的标签（衬线，说人话）和相机的读数（等宽，报数据）。中文交给系统字（PingFang SC），只有拉丁文和数字承担个性——这也避免了为中文加载几 MB 字体。</p>
+    <div class="spec">
+      <div class="spec-row"><div class="spec-tag">Newsreader 400<br>标题 / 品牌 / 说明</div><div class="spec-demo t-display">光落在该落的地方</div></div>
+      <div class="spec-row"><div class="spec-tag">Newsreader 400<br>小节标题</div><div class="spec-demo t-title">你的照片，值得一个框</div></div>
+      <div class="spec-row"><div class="spec-tag">Plex Sans 400<br>正文 / 控件标签</div><div class="spec-demo t-body">把照片拖到墙上，选一个样式。剩下的交给它——框、留白、阴影、参数条都会自己摆好。</div></div>
+      <div class="spec-row"><div class="spec-tag">Plex Sans 400<br>12.5px 控件</div><div class="spec-demo t-label">画框大小　　圆角　　底部白边</div></div>
+      <div class="spec-row"><div class="spec-tag">Plex Mono 400<br>参数条 / 读数</div><div class="spec-demo"><div class="plate-demo"><span>FL <b>140mm</b></span><span>Aperture <b>f/2.1</b></span><span>Shutter <b>1/82</b></span><span>ISO <b>500</b></span></div></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>斜口</h2>
+    <p class="sub">切卡纸的刀是 45° 斜着下去的，切面露出一条比表面暗一点的内芯。这条线就是整套界面的结构母题——它本来就是这门手艺里最细的那道工。</p>
+    <div class="bevel-wrap">
+      <div class="explode">
+        <span class="tag tag-a">斜口 · 距边 5px 的 1px 内线</span>
+        <div class="rawshot"></div>
+        <span class="tag tag-b">卡纸 · 白 · 2px 圆角</span>
+      </div>
+      <div class="bevel-copy">
+        <h3>一条线用到底</h3>
+        <p>选中态、面板边界、模板缩略图、滑杆轨道，全部用同一道内缩的细线。不靠颜色、不靠阴影深浅来表达状态——靠这条线在不在。</p>
+        <ul>
+          <li>面板与卡片：距边 5px 的内线</li>
+          <li>选中：内线换成墨色</li>
+          <li>付费：右上角一个 11px 的铜角</li>
+          <li>主按钮：切掉两个对角，7px 的斜切</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>产品长什么样</h2>
+    <p class="sub">三个样式，用的都是你给的那张样片。左边是相机参数条——把照片自己的 EXIF 读出来排成一行，用户一个字都不用打。这三张是成品，所以它们不随主题变。</p>
+    <div class="outputs">
+      <figure>
+        <div class="mat-frame tpl-spec">
+          <div class="brand">HASSELBLAD</div>
+          <div class="rawshot"></div>
+          <div class="plate"><span>FL <b>140mm</b></span><span>Aperture <b>f/2.1</b></span><span>Shutter <b>1/82</b></span><span>ISO <b>500</b></span></div>
+        </div>
+        <figcaption><b>样张</b><span>铜 · 付费</span></figcaption>
+      </figure>
+      <figure>
+        <div class="mat-frame tpl-pol">
+          <div class="rawshot"></div>
+          <div class="hand">City Walk</div>
+        </div>
+        <figcaption><b>拍立得</b><span>免费</span></figcaption>
+      </figure>
+      <figure>
+        <div class="mat-frame tpl-lp">
+          <div class="rawshot"></div>
+          <div class="cap">2026.10.03</div>
+        </div>
+        <figcaption><b>留白</b><span>免费</span></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>部件</h2>
+    <p class="sub">控件总数刻意很少。这一版的承诺是一张照片进来、一个好看的框出去，所以能调的只有和框有关的量。这些都是界面件，跟着主题走。</p>
+    <div class="parts">
+      <div class="part">
+        <h3>操作</h3>
+        <div class="row">
+          <button class="btn btn-primary">保存</button>
+          <button class="btn">调整</button>
+        </div>
+      </div>
+      <div class="part">
+        <h3>样式缩略图 · 后两个是选中与付费</h3>
+        <div class="prints">
+          <div class="print"><div class="rawshot"></div></div>
+          <div class="print on"><div class="rawshot"></div></div>
+          <div class="print brass"><div class="rawshot"></div></div>
+        </div>
+      </div>
+      <div class="part">
+        <h3>滑杆 · 已填充段用墨</h3>
+        <div class="slider">
+          <div class="lab"><b>框边留白</b><i>42</i></div>
+          <div class="track"></div>
+        </div>
+      </div>
+      <div class="part">
+        <h3>参数条 · 自动读取</h3>
+        <div class="plate-demo"><span>FL <b>140mm</b></span><span>f/<b>2.1</b></span><span><b>1/82</b></span><span>ISO <b>500</b></span></div>
+      </div>
+      <div class="part">
+        <h3>付费标记</h3>
+        <div class="row"><span class="plaque">样张 · 铜角装裱</span></div>
+      </div>
+      <div class="part">
+        <h3>保存提示 · 带输出缩略图</h3>
+        <div class="row"><span class="toast"><span class="rawshot"></span>已保存 2880 × 3600</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>手机</h2>
+    <p class="sub">照片是主角，所以它占的空间最大、位置最正。默认状态下只有两个操作，模板横排在下面——像一排刚洗出来的小样。按右上角的「暗」看它在系统暗色下什么样。</p>
+    <div class="mock-stage">
+      <div class="phone">
+        <div class="screen">
+          <div class="statusbar">
+            <span>9:41</span>
+            <span class="sysicons">
+              <i class="bars"><b></b><b></b><b></b></i>
+              <i class="batt"></i>
+            </span>
+          </div>
+          <div class="appbar">
+            <span class="mark">留白</span>
+            <span class="out">1440 × 1800</span>
+          </div>
+          <div class="wall-area">
+            <div class="artwork">
+              <div class="mat-frame">
+                <div class="rawshot"></div>
+              </div>
+            </div>
+            <div class="wall-plate"><span>FL 140mm</span><span>f/2.1</span><span>1/82</span><span>ISO 500</span></div>
+          </div>
+          <div class="dock">
+            <div class="rail-h"><b>样式</b><span>6</span></div>
+            <div class="rail">
+              <div class="print"><div class="rawshot"></div></div>
+              <div class="print on"><div class="rawshot"></div></div>
+              <div class="print brass"><div class="rawshot"></div></div>
+              <div class="print"><div class="rawshot"></div></div>
+              <div class="print"><div class="rawshot"></div></div>
+            </div>
+            <div class="acts">
+              <button class="btn">调整</button>
+              <button class="btn btn-primary">保存</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>桌面</h2>
+    <p class="sub">同一套材料横过来：左边一排样张，中间那面墙，右边是收起来的调整面板。墙永远占得最多。</p>
+    <div class="mock-stage">
+      <div class="deskscale">
+        <div class="desk">
+          <div class="desk-rail">
+            <div class="mark">留白</div>
+            <div class="out">1440 × 1800</div>
+            <div class="print on"><div class="rawshot"></div></div>
+            <div class="print brass"><div class="rawshot"></div></div>
+            <div class="print"><div class="rawshot"></div></div>
+            <div class="print"><div class="rawshot"></div></div>
+            <div class="print"><div class="rawshot"></div></div>
+          </div>
+          <div class="desk-wall">
+            <div class="desk-art">
+              <div class="mat-frame" style="padding:19px">
+                <div class="rawshot"></div>
+              </div>
+            </div>
+            <div class="wall-plate" style="font-size:10px"><span>FL 140mm</span><span>Aperture f/2.1</span><span>Shutter 1/82</span><span>ISO 500</span></div>
+          </div>
+          <div class="desk-tools">
+            <div>
+              <h4>框</h4>
+              <div class="slider" style="margin-top:14px">
+                <div class="lab"><b>框边留白</b><i>42</i></div>
+                <div class="track"></div>
+              </div>
+              <div class="slider" style="margin-top:18px">
+                <div class="lab"><b>底部白边</b><i>68</i></div>
+                <div class="track"></div>
+              </div>
+            </div>
+            <div class="row"><span class="plaque">样张 · 铜角装裱</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>保存的那一刻</h2>
+    <p class="sub">导出是这个产品的仪式，不是一条 toast。界面退下去，作品单独留在墙上，尺寸标在下面。</p>
+    <div class="ceremony">
+      <div>
+        <div class="mat-frame" style="padding:16px;max-width:262px;margin:0 auto">
+          <div class="rawshot"></div>
+        </div>
+      </div>
+      <div class="ceremony-copy">
+        <h3>已装裱</h3>
+        <p>2880 × 3600 PNG，已存到相册。iOS 上这里是一张可以长按保存的图；桌面端直接下载，文件名带尺寸和时间。</p>
+        <div class="row" style="display:flex;gap:10px">
+          <button class="btn btn-primary">再存一张</button>
+          <button class="btn">完成</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>装裱 · STYLE DIRECTION v2 · 2026-10-07 · 全部示例使用项目内的样片</footer>
+</div>
+
+<script>
+(function(){
+  const root = document.documentElement;
+  const KEY = 'zhuangbiao-theme';
+  let stored = null;
+  try { stored = localStorage.getItem(KEY); } catch(e){}
+  const sysDark = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
+
+  function apply(t){
+    root.setAttribute('data-theme', t);
+    document.querySelectorAll('[data-light]').forEach(el => {
+      el.textContent = (t === 'dark') ? el.dataset.dark : el.dataset.light;
+    });
+    document.querySelectorAll('.segbtn').forEach(b => {
+      const on = b.dataset.t === t;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+  function set(t, remember){
+    apply(t);
+    if(remember){ try { localStorage.setItem(KEY, t); } catch(e){} }
+  }
+
+  apply(stored || (sysDark ? 'dark' : 'light'));
+
+  document.querySelectorAll('.segbtn').forEach(b => {
+    b.addEventListener('click', () => set(b.dataset.t, true));
+  });
+
+  if(window.matchMedia){
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+      let cur = null; try { cur = localStorage.getItem(KEY); } catch(err){}
+      if(!cur) apply(e.matches ? 'dark' : 'light');
+    });
+  }
+})();
+</script>
+</body>
+</html>
