@@ -1576,7 +1576,6 @@ Expected: FAIL — `render` is not a function.
 import { drawBackground } from './background'
 import { aspectOf, cover, fitRect, matRect } from './geometry'
 import { drawMat, roundedRect } from './mat'
-import { drawPlate } from './plate'
 import { drawText } from './text'
 import type { RenderInput, Rect } from './types'
 
@@ -2244,7 +2243,15 @@ test('the ceremony hides the chrome and states the dimensions', async ({ page })
 })
 ```
 
-Export `showCeremony` on `window.__frameCeremony` from `src/main.ts` so the test can reach it.
+The `__frameCeremony` handle must exist now, not in Task 12 — Task 12's dev-API block comes later and this test cannot wait for it. Add to `src/main.ts`, in a `?dev=1` guard of its own (Task 12 will fold it into the consolidated dev API):
+
+```ts
+import { showCeremony } from './ui/export'
+// ...
+if (new URLSearchParams(location.search).has('dev')) {
+  ;(window as unknown as Record<string, unknown>).__frameCeremony = { showCeremony }
+}
+```
 
 - [ ] **Step 7: Run and confirm pass**
 
@@ -3106,6 +3113,16 @@ if (new URLSearchParams(location.search).has('dev')) {
 }
 ```
 
+This replaces the interim `?dev=1` block Task 9 added for `__frameCeremony`.
+
+Task 12 must also retire Task 1's smoke test, which asserted `#app` still read `'ready'`:
+
+```bash
+git rm tests/pixel/smoke.spec.ts
+```
+
+The shell it checked no longer exists — `#app` was a placeholder from the scaffold and this task deletes the line that filled it. Keeping the file would leave a permanently red test asserting the absence of a feature. The app has real tests now; the smoke test has done its job.
+
 `readExif` arrives in Task 15. **Until then, stub it** as `export function readExif(_buf: ArrayBuffer): Exif | null { return null }` in `src/core/exif.ts` so this task compiles.
 
 Add the imports this block needs at the top of `src/main.ts`:
@@ -3139,7 +3156,7 @@ git commit -m "feat: mat-anchored text, template rail, and live rendering"
 **Files:**
 - Create: `src/ui/custom.ts`
 - Create: `tests/unit/custom.test.ts`
-- Modify: `src/main.ts`, `src/ui/rail.ts`
+- Modify: `index.html` (the 存为模板 button), `src/main.ts`
 
 **Interfaces:**
 - Consumes: `Template`, `validateTemplate` (Task 11)
@@ -3922,7 +3939,7 @@ The whole monetization footprint, exactly as spec §10 defines it.
 **Files:**
 - Create: `src/entitlements.ts`
 - Create: `tests/unit/entitlements.test.ts`
-- Modify: `src/ui/rail.ts`, `src/main.ts`
+- Modify: `index.html` (the plaque row), `src/main.ts`
 
 **Interfaces:**
 - Consumes: `Template` (Task 3)
