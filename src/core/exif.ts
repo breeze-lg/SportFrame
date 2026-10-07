@@ -16,7 +16,8 @@ import type { Exif } from './types'
 
 const TAG_MAKE = 0x010f
 const TAG_MODEL = 0x0110
-const TAG_DATETIME = 0x0132
+const TAG_DATETIME = 0x0132           // DateTime: when the file was last written
+const TAG_DATETIME_ORIGINAL = 0x9003  // DateTimeOriginal: when the frame was shot
 const TAG_EXIF_IFD = 0x8769
 const TAG_FOCAL = 0xa405          // FocalLengthIn35mmFilm
 const TAG_FOCAL_RAW = 0x920a      // FocalLength
@@ -35,10 +36,21 @@ function u16(r: Reader, off: number): number {
 function u32(r: Reader, off: number): number {
   return r.view.getUint32(r.tiffStart + off, r.le)
 }
+function i32(r: Reader, off: number): number {
+  return r.view.getInt32(r.tiffStart + off, r.le)
+}
 
-function rational(r: Reader, valueOffset: number): number | null {
-  const num = u32(r, valueOffset)
-  const den = u32(r, valueOffset + 4)
+/** TIFF type 5 (RATIONAL) and type 10 (SRATIONAL) share a layout — two 32-bit
+ *  halves — so the type is the only thing that says whether 0xFFFFFFFF means
+ *  -1 or 4294967295. It decides more than it looks: `ShutterSpeedValue` is
+ *  SRATIONAL and APEX runs negative for any exposure over a second, so a 2 s
+ *  frame stores Tv = -1. Read as unsigned that is 4294967295, `2 ** -4294967295`
+ *  is 0, and the caption prints `1/Infinity` for a perfectly ordinary long
+ *  exposure — conforming data, not corruption. */
+function rational(r: Reader, valueOffset: number, type: number): number | null {
+  const signed = type === 10
+  const num = signed ? i32(r, valueOffset) : u32(r, valueOffset)
+  const den = signed ? i32(r, valueOffset + 4) : u32(r, valueOffset + 4)
   if (den === 0) return null
   return num / den
 }
@@ -167,26 +179,26 @@ export function readExif(buf: ArrayBuffer): Exif | null {
       if (v > 0) out.focal = `${v}mm`
     }
     if (!out.focal && focalRaw) {
-      const v = rational(r, u32(r, focalRaw.entry + 8))
+      const v = rational(r, u32(r, focalRaw.entry + 8), focalRaw.type)
       if (v !== null && v > 0) out.focal = `${Math.round(v)}mm`
     }
 
     const fnum = tags.get(TAG_FNUMBER)
     if (fnum) {
-      const v = rational(r, u32(r, fnum.entry + 8))
+      const v = rational(r, u32(r, fnum.entry + 8), fnum.type)
       if (v !== null && v > 0) out.aperture = `f/${v.toFixed(1)}`
     }
     if (!out.aperture) {
       const ap = tags.get(TAG_APERTURE)
       if (ap) {
-        const apex = rational(r, u32(r, ap.entry + 8))
+        const apex = rational(r, u32(r, ap.entry + 8), ap.type)
         if (apex !== null) out.aperture = `f/${Math.pow(2, apex / 2).toFixed(1)}`
       }
     }
 
     const expo = tags.get(TAG_EXPOSURE)
     if (expo) {
-      const v = rational(r, u32(r, expo.entry + 8))
+      const v = rational(r, u32(r, expo.entry + 8), expo.type)
       if (v !== null && v > 0) {
         out.shutter = v >= 1 ? `${v}s` : `1/${Math.round(1 / v)}`
       }
@@ -194,7 +206,7 @@ export function readExif(buf: ArrayBuffer): Exif | null {
     if (!out.shutter) {
       const sh = tags.get(TAG_SHUTTER_APEX)
       if (sh) {
-        const apex = rational(r, u32(r, sh.entry + 8))
+        const apex = rational(r, u32(r, sh.entry + 8), sh.type)
         if (apex !== null) {
           // ShutterSpeedValue is APEX, which stores the *reciprocal*: T = 2^-Av,
           // so 1/125 s arrives as Av ≈ 7. 2^Av is 1/T, not T — read as seconds
@@ -213,7 +225,13 @@ export function readExif(buf: ArrayBuffer): Exif | null {
       if (v > 0) out.iso = `ISO ${v}`
     }
 
-    const dt = tags.get(TAG_DATETIME)
+    // The plate exists to say what the camera did, so the frame's capture time
+    // outranks the file's last-write time. A photo that has been through an
+    // editor carries both and they disagree: `with-exif.jpg` has the camera's
+    // DateTimeOriginal (2019:12:03, Exif IFD) and Paint.NET's re-save DateTime
+    // (2019:12:04, IFD0) — reading the latter captions the frame with the day
+    // someone saved it, which is a day this photo was not taken.
+    const dt = tags.get(TAG_DATETIME_ORIGINAL) ?? tags.get(TAG_DATETIME)
     if (dt) {
       const raw = ascii(r, dt.entry, dt.count)
       const m = /^(\d{4}):(\d{2}):(\d{2})/.exec(raw)

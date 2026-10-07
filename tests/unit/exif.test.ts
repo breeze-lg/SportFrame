@@ -8,12 +8,29 @@ import type { Exif } from '../../src/core/types'
  * window onto Node's *shared* pool — so `.buffer` there is the whole pool with
  * neighbouring allocations in it, not the file. Slicing to the file's own bytes
  * keeps the fixtures honest no matter how small a future one is.
+ *
+ * What wrote each fixture's EXIF bytes, and where its pixels came from:
+ * `tests/fixtures/README.md`.
  */
 const buf = (name: string): ArrayBuffer => {
   const b = readFileSync(new URL(`../fixtures/${name}`, import.meta.url))
   return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer
 }
 const bytes = (name: string): Uint8Array => new Uint8Array(buf(name))
+
+/** Byte-run search, for asserting on what a fixture literally stores rather
+ *  than only on what the parser made of it. */
+const findRun = (haystack: Uint8Array, needle: number[]): number => {
+  outer: for (let i = 0; i + needle.length <= haystack.length; i++) {
+    for (let j = 0; j < needle.length; j++) if (haystack[i + j] !== needle[j]) continue outer
+    return i
+  }
+  return -1
+}
+
+/** The bytes a fixture holds as text, for asserting an ASCII tag is present. */
+const asText = (name: string): string =>
+  Array.from(bytes(name), (b) => String.fromCharCode(b)).join('')
 
 /** What the caption is allowed to print, one shape per field. */
 const FORMATS: Record<keyof Exif, RegExp> = {
@@ -26,10 +43,17 @@ const FORMATS: Record<keyof Exif, RegExp> = {
 }
 
 /**
- * One frame, one camera, one pair of settings — `with-exif-le.jpg` is the same
+ * One camera, one pair of settings, two frames — `with-exif-le.jpg` is the same
  * shoot as `with-exif.jpg`, written with the opposite TIFF byte order. Nikon
  * does not dedupe: its Model ("NIKON D810") does not start with its Make
  * ("NIKON CORPORATION"), so both belong in the caption.
+ *
+ * The dates differ because the frames do: these are the *capture* times the
+ * camera wrote (`DateTimeOriginal`), 2019:12:03 and 2019:12:02. Both files also
+ * carry an IFD0 `DateTime` from the editor that re-saved them — 2019:12:04 in
+ * both — which is the day the file last changed, not the day the photo was
+ * taken. Reading that one is what the printer did before this test said
+ * otherwise, and it printed the same wrong day for both frames.
  */
 const NIKON: Exif = {
   camera: 'NIKON CORPORATION NIKON D810',
@@ -37,8 +61,14 @@ const NIKON: Exif = {
   aperture: 'f/15.0',
   shutter: '1/125',
   iso: 'ISO 64',
-  date: '2019.12.04',
+  date: '2019.12.03',
 }
+const NIKON_LE: Exif = { ...NIKON, date: '2019.12.02' }
+
+/** What IFD0's DateTime holds in `with-exif.jpg`: the day the file was last
+ *  written. Not a caption — but it is the honest fallback when a cut removes
+ *  the Exif IFD the capture date lives in. */
+const NIKON_SAVE_DATE = '2019.12.04'
 
 /** Where `with-exif.jpg`'s Exif segment stops: 2 SOI + 4 marker and length +
  *  the 1002-byte payload. Every byte the parser reads lives before this. */
@@ -58,7 +88,24 @@ describe('readExif', () => {
   })
 
   it('reads the same values through a little-endian TIFF header', () => {
-    expect(readExif(buf('with-exif-le.jpg'))).toEqual(NIKON)
+    expect(readExif(buf('with-exif-le.jpg'))).toEqual(NIKON_LE)
+  })
+
+  it('[RF-2] prefers the capture date over the file’s save date', () => {
+    // Both dates are really in the file, a day apart, so this cannot pass by
+    // the two tags happening to agree: IFD0's DateTime is the editor's re-save
+    // and the Exif IFD's DateTimeOriginal is the camera's shutter.
+    const text = asText('with-exif.jpg')
+    expect(text).toContain('2019:12:04 10:27:56') // DateTime, IFD0 — the save
+    expect(text).toContain('2019:12:03 11:05:13') // DateTimeOriginal, Exif IFD
+    expect(readExif(buf('with-exif.jpg'))!.date).toBe('2019.12.03')
+
+    // And the other way round on the byte-order twin, which is the same
+    // camera and lens on the previous day.
+    const le = asText('with-exif-le.jpg')
+    expect(le).toContain('2019:12:04 10:58:26')
+    expect(le).toContain('2019:12:02 16:50:13')
+    expect(readExif(buf('with-exif-le.jpg'))!.date).toBe('2019.12.02')
   })
 
   it('[RF-2] returns null for a file with no EXIF segment', () => {
@@ -86,10 +133,33 @@ describe('readExif', () => {
     expect(e!.shutter).toBe('1/38')
   })
 
+  it('[RF-2] reads a negative ShutterSpeedValue as a long exposure, not 1/Infinity', () => {
+    // APEX runs negative for any exposure over a second: Tv = -1 is 2 s, and
+    // the tag that holds it is SRATIONAL, so the numerator is 0xFFFFFFFF. Read
+    // as unsigned that is 4294967295, and `2 ** -4294967295` collapses to zero —
+    // the caption then prints `1/Infinity` for an ordinary two-second frame.
+    // This is conforming data, not corruption, which is why it gets a fixture.
+    const raw = bytes('long-exposure.jpg')
+    // The fixture really is signed: the Exif IFD entry is tag 0x9201, type 10,
+    // count 1, and the eight bytes it points at are -1/1.
+    expect(findRun(raw, [0x92, 0x01, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x01])).toBeGreaterThanOrEqual(0)
+    expect(findRun(raw, [0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01])).toBeGreaterThanOrEqual(0)
+
+    expect(readExif(buf('long-exposure.jpg'))).toEqual({
+      camera: 'FixtureCam Night',
+      shutter: '2s',
+      date: '2024.05.05',
+    })
+  })
+
   it('[RF-2] returns a partial object for a real export that carries only a date', () => {
     // The strongest form of the partial case: a real editor's output whose
     // Exif IFD holds no camera settings at all. Every absent field must be
-    // absent, and the one present field must survive.
+    // absent, and the one present field must survive. This file has no
+    // DateTimeOriginal — the camera never touched it — so it is also the
+    // fixture that holds the *fallback* to DateTime up.
+    const text = asText('partial-date-only.jpg')
+    expect(text).toContain('2015:10:22 11:32:14')
     expect(readExif(buf('partial-date-only.jpg'))).toEqual({ date: '2015.10.22' })
   })
 
@@ -144,8 +214,14 @@ describe('readExif', () => {
         expect(value, `cut ${cut}: ${field}`).toMatch(FORMATS[field as keyof Exif])
         // And what survives must be the byte it always was. Offsets do not
         // shift under truncation, so a field that is still readable has to
-        // read exactly what the intact file reads.
-        expect(value, `cut ${cut}: ${field}`).toBe(NIKON[field as keyof Exif])
+        // read exactly what the intact file reads. The one legitimate
+        // exception is `date`: this file holds two, and a cut inside the Exif
+        // segment can remove the capture date's IFD while IFD0 — which sits
+        // earlier — is still there. Either date is a value the file really
+        // carries; a third one would be an invention.
+        const allowed =
+          field === 'date' ? [NIKON.date, NIKON_SAVE_DATE] : [NIKON[field as keyof Exif]]
+        expect(allowed, `cut ${cut}: ${field}`).toContain(value)
       }
       if (cut >= APP1_END) {
         // Past the end of the Exif segment every cut still holds the whole TIFF
