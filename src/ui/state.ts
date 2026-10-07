@@ -15,7 +15,12 @@ export function createState(initial: Partial<AppState> = {}): AppState {
     exif: null,
     template: null,
     text: {},
-    size: { W: 1080, H: 1350 },
+    // The placeholder before the first `draw()`, and it has to agree with
+    // `longEdge`: 1440 on the long edge of the boot template's 4:5 canvas is
+    // `resolveSize('4:5', 1440)`, the size `draw` assigns on the first frame.
+    // 1080×1350 was the same ratio at a long edge nothing in the app uses, so a
+    // reader had two numbers for one canvas and only one of them was real.
+    size: { W: 1152, H: 1440 },
     longEdge: 1440,
     ...initial,
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resolveSize, cover, fitRect, matRect } from '../../src/core/geometry'
+import { aspectOf, cover, fitRect, matRect, resolveSize } from '../../src/core/geometry'
 
 describe('resolveSize', () => {
   it('puts the long edge on width for landscape ratios', () => {
@@ -80,8 +80,6 @@ describe('matRect', () => {
     expect(r.h).toBe(10 + 20 + 10)
   })
 })
-
-import { aspectOf } from '../../src/core/geometry'
 
 describe('[RF-1] cover never letterboxes, for any source and any box', () => {
   it('covers a 4:5 frame from a 3:1 panorama', () => {

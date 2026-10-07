@@ -90,7 +90,11 @@ export type ExportOpts = {
   size: Size
   template: Template
   photos: Photo[]
-  text: Partial<Record<string, string>>
+  // `TextSlotId`, as `renderToCanvas` and `render` both take it: with a bare
+  // `string` key a mistyped slot name — `titel` — typechecked here and was
+  // silently absent from the exported poster, which is the failure this
+  // architecture exists to make impossible.
+  text: Partial<Record<TextSlotId, string>>
   exif: Exif | null
   want?: 2 | 4
 }
@@ -154,14 +158,7 @@ export async function exportPng(
   const ladder = rungs.length > 0 ? rungs : [1]
 
   const draw = (scale: number) =>
-    renderToCanvas(
-      opts.size,
-      scale,
-      opts.template,
-      opts.photos,
-      opts.text as Partial<Record<TextSlotId, string>>,
-      opts.exif,
-    )
+    renderToCanvas(opts.size, scale, opts.template, opts.photos, opts.text, opts.exif)
   const encode = (canvas: HTMLCanvasElement) =>
     new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'))
 

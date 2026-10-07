@@ -213,12 +213,16 @@ test('the mark on a saved chip survives being the selected chip', async ({ page 
   const saved = chip(page, '我的模板')
   const builtIn = chip(page, '竖版故事') // off, and not the premium one
 
-  // First, where the mark is: the whole chip, so this also says the mark is the
-  // *only* difference between a saved chip and a built-in one.
+  // First, where the mark is: the chip's bottom strip, which is where the mark
+  // is claimed to live. This used to run from row 0, on the claim that the mark
+  // was the *only* difference between a saved chip and a built-in one. That is
+  // no longer true, and deliberately so: a saved chip now carries the × that
+  // removes it, whose cell crosses rows the mark does not. Measuring the strip
+  // keeps this test's own claim — the mark is real, bottom-weighted, and in the
+  // bevel grey — while the × is asserted where it belongs, in the delete tests.
   const off = markDelta(
     await decode(page, await saved.screenshot()),
     await decode(page, await builtIn.screenshot()),
-    0,
   )
   expect(off.n, 'a saved chip and a built-in chip are the same picture').toBeGreaterThan(0)
   expect(
@@ -263,10 +267,12 @@ test('the rail carries the mark in dark theme too', async ({ page }) => {
   const saved = chip(page, '夜里的模板')
   const builtIn = chip(page, '竖版故事')
 
+  // the bottom strip, as in the selection test above and for the same reason:
+  // the × a saved chip wears is a difference in the chip's top-right, and this
+  // test is about the hairline at its foot
   const mark = markDelta(
     await decode(page, await saved.screenshot()),
     await decode(page, await builtIn.screenshot()),
-    0,
   )
   expect(mark.n, 'the saved chip is unmarked on a dark rail').toBeGreaterThan(0)
   expect(
@@ -359,4 +365,165 @@ test('with no browser store, a save survives the session — and only lands once
   await first.click()
   await expect(first).toHaveAttribute('aria-pressed', 'true')
   expect(await digest(page)).toEqual(asBuiltIn)
+})
+
+// ---------------------------------------------------------------------------
+// Deleting a saved template
+// ---------------------------------------------------------------------------
+
+/**
+ * The rail's other half, and the prototype's shape: a `×` on a saved chip.
+ * Without it the rail only grows — three saves are three permanent chips, and a
+ * mistyped name is a chip for good — which is why the prototype carried one on
+ * every custom chip and why §4's v1 row counts custom templates as carried over
+ * from it.
+ *
+ * The × is a control on the chip, so most of what has to be true of it is
+ * visual and lives below: it wears the bevel hairline rather than `--brass`
+ * (brass is the premium marker and nothing else may look like metal), it is
+ * drawn for a saved chip and never for one of the nine, and removing the
+ * selected template has to leave the app pointed at something real.
+ */
+
+/** The × on a saved chip, named the way the rail names it for assistive tech. */
+const remove = (page: Page, name: string) =>
+  page.locator(`.del[aria-label="删除模板 ${name}"]`)
+
+test('a saved template can be deleted — off the rail and out of the store', async ({ page }) => {
+  await page.goto('/')
+  await loadPhoto(page)
+  await saveAs(page, '待删除的')
+
+  const saved = chip(page, '待删除的')
+  await expect(saved).toHaveCount(1)
+  await expect(remove(page, '待删除的')).toHaveCount(1)
+  await expect(page.locator('#rail .print')).toHaveCount(TEMPLATES.length + 1)
+
+  // the saved chip is not the selected one, so what is on the wall is a claim
+  // about deletion leaving everything but the rail alone
+  const before = await digest(page)
+  await remove(page, '待删除的').click()
+
+  await expect(saved).toHaveCount(0)
+  await expect(remove(page, '待删除的')).toHaveCount(0)
+  await expect(page.locator('#rail .print')).toHaveCount(TEMPLATES.length)
+  await expect(page.locator('#toast')).toContainText('已删除模板：待删除的')
+  expect(await digest(page), 'deleting a chip redrew a wall it is not on').toEqual(before)
+
+  // Gone from the store, not merely from the DOM: the reload below is the only
+  // thing that can tell a deleted record from a chip that was merely not drawn.
+  const stored = await page.evaluate(() => localStorage.getItem('frame-app-custom-v1'))
+  expect(JSON.parse(stored ?? '[]')).toEqual([])
+
+  await page.reload()
+  await expect(chip(page, '待删除的')).toHaveCount(0)
+  await expect(page.locator('#rail .print')).toHaveCount(TEMPLATES.length)
+})
+
+test('the × is drawn on saved chips only, and never in the premium brass', async ({ page }) => {
+  await page.goto('/')
+
+  // nothing saved: no × on the rail at all, so the affordance is not merely
+  // unstyled on a built-in — it is not there
+  await expect(page.locator('#rail .del')).toHaveCount(0)
+
+  await saveAs(page, '我的模板')
+  await expect(page.locator('#rail .del')).toHaveCount(1)
+  // and it belongs to the saved chip's mount, not to one of the nine
+  await expect(page.locator('.mount:has(.del) .print')).toHaveAttribute('aria-label', '我的模板')
+  for (const t of TEMPLATES) {
+    await expect(
+      page.locator(`.mount:has(.print[aria-label="${t.name}"]) .del`),
+      `${t.name} carries a delete control`,
+    ).toHaveCount(0)
+  }
+
+  // The material: the same bevel hairline every mount already has — measured
+  // against the chip's own border, which is `var(--bevel)` — and not brass. The
+  // plaque is the one element in the app that is painted brass, and it is
+  // `hidden` here; a computed style is still the computed style.
+  const style = await page.evaluate(() => {
+    const del = document.querySelector('#rail .del') as HTMLElement
+    // off, and not the premium one: `.on` repaints the border in `--ink` and
+    // the brass chip's hairline is the one the × must not be mistaken for
+    const builtIn = document.querySelector('#rail .print[aria-label="竖版故事"]') as HTMLElement
+    const plaque = document.querySelector('.plaque-row') as HTMLElement
+    const s = getComputedStyle(del)
+    return {
+      line: s.borderLeftColor,
+      foot: s.borderBottomColor,
+      chip: getComputedStyle(builtIn).borderTopColor,
+      glyph: s.color,
+      brass: getComputedStyle(plaque).color,
+    }
+  })
+  expect(style.line).toBe(style.chip)
+  expect(style.foot).toBe(style.chip)
+  expect(style.glyph, 'the × is wearing the premium brass').not.toBe(style.brass)
+})
+
+test('deleting the selected template falls back to a built-in and re-renders the wall', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await loadPhoto(page)
+
+  // the boot template's own render, which is what the app must come back to
+  await chip(page, '经典').click()
+  const boot = await digest(page)
+
+  // a copy of 拍立得, selected: the wall is the copy's, byte for byte, until
+  // the copy is deleted
+  await chip(page, '拍立得').click()
+  await saveAs(page, '会没的')
+  const saved = chip(page, '会没的')
+  await saved.click()
+  await expect(saved).toHaveAttribute('aria-pressed', 'true')
+  const asSaved = await digest(page)
+  expect(asSaved).not.toEqual(boot)
+
+  await remove(page, '会没的').click()
+
+  // the chip is gone, and exactly one chip is on: the selection landed on a
+  // template that exists rather than on the id that just left the rail
+  await expect(saved).toHaveCount(0)
+  await expect(page.locator('#rail .print.on')).toHaveCount(1)
+  await expect(page.locator('#rail .print[aria-pressed="true"]')).toHaveCount(1)
+  await expect(chip(page, '经典')).toHaveAttribute('aria-pressed', 'true')
+
+  // and the wall moved with it — a canvas still showing the deleted template's
+  // poster is the state this exists to prevent
+  expect(await digest(page), 'the wall still shows the deleted template').toEqual(boot)
+
+  // still usable: a pick still moves the wall, and 存为模板 still saves
+  await chip(page, '电影感').click()
+  await expect(chip(page, '电影感')).toHaveAttribute('aria-pressed', 'true')
+  expect(await digest(page)).not.toEqual(boot)
+  await saveAs(page, '删除之后')
+  await expect(chip(page, '删除之后')).toHaveCount(1)
+})
+
+test('a delete the store refuses changes nothing and says so', async ({ page }) => {
+  await page.goto('/')
+  await saveAs(page, '删不掉的')
+  await expect(chip(page, '删不掉的')).toHaveCount(1)
+
+  // a store that stops taking writes after the template is in it — the same
+  // failure §9 names for saving, which for a delete is a different shape: a
+  // save has the template in hand and can carry the list to the session store,
+  // while a delete has nothing to carry and must not pretend it happened.
+  await page.evaluate(() => {
+    Storage.prototype.setItem = () => {
+      throw new DOMException('quota exceeded', 'QuotaExceededError')
+    }
+  })
+  await remove(page, '删不掉的').click()
+
+  await expect(page.locator('#toast')).toContainText('删除失败')
+  // the chip is still there, and so is the record behind it: the reload below
+  // is what proves the second half
+  await expect(chip(page, '删不掉的')).toHaveCount(1)
+
+  await page.reload()
+  await expect(chip(page, '删不掉的')).toHaveCount(1)
 })

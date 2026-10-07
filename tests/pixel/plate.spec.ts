@@ -142,6 +142,13 @@ type Shot = { count: number; minX: number; maxX: number; minY: number; maxY: num
  * below the photograph, inset by the mat's own walls. Reconstructed here from
  * the layout functions `render` itself uses, so assertions about where the ink
  * landed are assertions about the band the renderer actually chose.
+ *
+ * `x` is `frame.x`, which is what "the mat's bottom strip, inset by the mat's
+ * side walls" means: `matRect` grows the frame by `mat * k` on every side, so
+ * the strip inside those walls begins at the frame's own left edge. The
+ * `frame.x + mat * k` this used to carry was the defect's expression copied
+ * into the test, which is why nothing in this file could see the plate sitting
+ * 86px right of centre — `bandFor` moved with it.
  */
 function bandFor(k: number) {
   const tpl = getTemplate(ID)!
@@ -149,7 +156,32 @@ function bandFor(k: number) {
   const frame = fitRect({ W: SIZE.W * k, H: SIZE.H * k }, aspect, tpl.frame.scale, 0, 0)
   const mat = matRect(frame, tpl.frame.mat, tpl.frame.matBottom, k)
   const top = frame.y + frame.h + tpl.frame.mat * k
-  return { x: frame.x + tpl.frame.mat * k, y: top, w: frame.w, h: Math.max(1, mat.y + mat.h - top) }
+  return { x: frame.x, y: top, w: frame.w, h: Math.max(1, mat.y + mat.h - top) }
+}
+
+/**
+ * Where the plate's ink has to be centred, derived from the *canvas* and the
+ * *mat* — never from the band expression above or the one `render` lays the
+ * band out with. Those two are the same expression, so an assertion against
+ * either can only say the plate is centred inside whatever band the renderer
+ * chose; it says nothing about where that band is, and it stays green while the
+ * plate sits a full mat to the right of the poster's centre.
+ *
+ * The two numbers here cannot move when the band expression does:
+ *
+ * - `canvas` is the middle of the box itself — `render` fits the frame with
+ *   `ox = 0`, so `fitRect` centres the photograph on it.
+ * - `mat` is the middle of the rect `matRect` lays the mat out with, which is
+ *   the photograph's frame grown symmetrically by `mat * k` on both sides. The
+ *   band is that mat's bottom strip inset by those same side walls, so the
+ *   band's centre is the mat's centre.
+ */
+function centresFor(k: number): { canvas: number; mat: number } {
+  const tpl = getTemplate(ID)!
+  const box = { W: SIZE.W * k, H: SIZE.H * k }
+  const frame = fitRect(box, aspectOf(tpl.canvas.ratio, PHOTO_SIZE), tpl.frame.scale, 0, 0)
+  const mat = matRect(frame, tpl.frame.mat, tpl.frame.matBottom, k)
+  return { canvas: box.W / 2, mat: mat.x + mat.w / 2 }
 }
 
 /**
@@ -273,6 +305,24 @@ test.describe('the plate on the canvas', () => {
     expect(
       Math.abs(inkCentre - (band.x + band.w / 2)),
       `the plate is not centred: ink centre ${inkCentre}, band centre ${band.x + band.w / 2}`,
+    ).toBeLessThanOrEqual(6)
+
+    // ...and centred on the *poster*, which the assertion above cannot say: it
+    // measures the ink against the band `bandFor` reconstructs from the same
+    // expression `render` builds its band with, so both sides move together.
+    // It passed while the band's `x` carried an extra `mat * k` and the plate
+    // sat 86px right of a 1152px canvas's centre. These two do not move with
+    // that expression — the canvas's centre is the box's, and the mat's centre
+    // is the frame's, because `matRect` grows the frame by `mat` on both sides
+    // — and the plate is the mat's bottom strip, so all three are one x.
+    const centre = centresFor(1)
+    expect(
+      Math.abs(inkCentre - centre.canvas),
+      `the plate is not centred on the canvas: ink centre ${inkCentre}, canvas centre ${centre.canvas}`,
+    ).toBeLessThanOrEqual(6)
+    expect(
+      Math.abs(inkCentre - centre.mat),
+      `the plate is not centred in the mat: ink centre ${inkCentre}, mat centre ${centre.mat}`,
     ).toBeLessThanOrEqual(6)
 
     // no metadata at all: the band is untouched, which is the whole of RF-2

@@ -97,10 +97,11 @@ export function validateTemplate(t: unknown): Validation {
  * entirely — collage is spec stages 5-6 and out of this plan's scope — so a
  * collage record here would silently render as a single-photo poster.
  *
- * `polaroid`, `postcard` and `spec-sheet` anchor their text to `'mat'`, which
- * `drawText` does not implement yet. Task 12 adds the geometry and the test
- * that proves it; declaring the anchor now is how these records say what they
- * are meant to look like.
+ * `polaroid`, `postcard` and `spec-sheet` anchor their text to `'mat'`, the
+ * white band below the photograph: `drawText` places a slot at 62% of
+ * `frame.matBottom` when the template carries a bottom mat, and falls through
+ * to `'bottom'` when it carries none. `tests/pixel/mat-anchor.spec.ts` is where
+ * that geometry is pinned, including which anchor a matless template gets.
  */
 export const TEMPLATES: Template[] = [
   {

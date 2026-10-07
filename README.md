@@ -89,9 +89,6 @@ real iOS Safari before it is sold to anyone. (Nothing reaches 4× through the UI
 today: the save button asks for 2×, and the premium rung is reachable only
 through `__frameExport`.)
 
-**Custom templates can be saved and selected, but not deleted.** The rail only
-grows; a user's saved copies accumulate with no way to remove one.
-
 **A saved `sign` text slot is drawn on the title's baseline under a top
 anchor.** 存为模板 copies the template's `text` config, the `sign` slot is
 accepted by validation, and `drawText` offsets only `sub` for `anchor: 'top'` —
@@ -110,3 +107,14 @@ were worth taking. `layout` is carried in the data model and nothing reads it:
 Payments are a seam only — one boolean (`Template.premium`) and two functions in
 `src/entitlements.ts`, both answering `true` in v1, wired at two call sites in
 `src/main.ts`. Nothing is gated.
+
+**`?selftest=1` and `?pixcheck=1` are not built.** The spec (§8, "Carried over
+from the prototype") names both of the prototype's other query affordances and
+says they should be preserved; this build has `?dev=1` and `?demo=1` (see above)
+and neither of those two. `?pixcheck=1` — the one the spec argues for by name,
+because it read exported pixels back to check the mat/frame boundary and is the
+hand-rolled ancestor of the pixel suite in §11 — is superseded by
+`tests/pixel/`: the invariants there, on the `?dev=1` handles, are the same
+reads against the same boundary. Nothing replaces `?selftest=1`. Both were
+dropped in the rebuild without a record, which is what this paragraph is for.
+Neither query does anything today.

@@ -107,7 +107,14 @@ function savedTemplates(): Template[] {
  */
 function paintRail(activeId: string | null): void {
   const saved = savedTemplates()
-  renderRail(rail, [...TEMPLATES, ...saved], activeId, pick, new Set(saved.map((t) => t.id)))
+  renderRail(
+    rail,
+    [...TEMPLATES, ...saved],
+    activeId,
+    pick,
+    new Set(saved.map((t) => t.id)),
+    removeSaved,
+  )
 }
 
 function pick(id: string): void {
@@ -223,6 +230,50 @@ function persist(copy: Template): 'stored' | 'session' | 'failed' {
   const carried = loadCustom(target)
   browserStore = null
   return saveCustom(saveStore(), [...carried, copy]) ? 'session' : 'failed'
+}
+
+/**
+ * The × on a saved chip: the same read-modify-write `persist` does, against the
+ * same store, so the rail and the store cannot disagree about what is saved.
+ *
+ * It degrades the other way round from a failed *save*. A save that cannot be
+ * written still has the user's template in hand, so it carries the list into
+ * the session store; a delete that cannot be written has nothing to carry —
+ * the template is still there — and moving to the session store would take a
+ * copy of the very record being deleted into the store the rail then reads.
+ * So a refused delete is refused out loud and changes nothing: the chip stays,
+ * and the user is told, rather than watching a template vanish and reappear on
+ * the next load.
+ *
+ * Deleting the selected template has to leave the app pointed at something
+ * real. The fallback is `TEMPLATES[0]`, the same template the app boots on, and
+ * the wall is redrawn — a poster still showing a style that is no longer on the
+ * rail is the one state this must not leave behind. A built-in is not
+ * deletable: the rail draws no × for one, and this refuses the id outright, so
+ * neither a stale chip nor a hand-called handler can reach the store with one.
+ */
+function removeSaved(id: string): void {
+  if (getTemplate(id)) return
+  const target = saveStore()
+  const list = loadCustom(target)
+  const victim = list.find((t) => t.id === id)
+  if (!victim) return
+  if (!saveCustom(target, list.filter((t) => t.id !== id))) {
+    toast('删除失败：存储不可用')
+    return
+  }
+
+  const wasActive = state.template?.id === id
+  if (wasActive) state.template = TEMPLATES[0] ?? null
+  // Rail first, then the toast: what the user is told has to describe a rail
+  // they are already looking at.
+  paintRail(state.template?.id ?? null)
+  if (wasActive && state.template) {
+    paintPlaque(state.template)
+    // the canvas is showing a template that no longer exists until this runs
+    draw()
+  }
+  toast(`已删除模板：${victim.name}`)
 }
 
 /**

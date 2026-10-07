@@ -80,7 +80,12 @@ export function render(input: RenderInput): void {
     const mat = matRect(frame, template.frame.mat, template.frame.matBottom, k)
     const bandTop = frame.y + frame.h + template.frame.mat * k
     const band = {
-      x: frame.x + template.frame.mat * k,
+      // `mat` spans `frame.x - mat*k` to `frame.x + frame.w + mat*k`, so the
+      // bottom strip inset by its own side walls starts at `frame.x` — the
+      // frame's own left edge, which is the canvas centre line either side of
+      // it. `frame.x + mat * k` would slide the plate one full mat to the
+      // right: 86px off centre for 样张 at k=1, 172px at k=2.
+      x: frame.x,
       y: bandTop,
       w: frame.w,
       h: Math.max(1, mat.y + mat.h - bandTop),

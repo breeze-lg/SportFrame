@@ -9,30 +9,6 @@ body {
   transition: background-color .25s ease, color .25s ease;
 }
 
-.sheet {
-  position: fixed;
-  inset: 0;
-  background: rgba(20, 24, 26, .90);
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  gap: 14px;
-}
-.sheet img { max-width: 100%; max-height: 72vh; border-radius: 2px; }
-.sheet p { color: #fff; font-size: 13px; margin: 0; text-align: center; }
-.sheet button {
-  padding: 10px 26px;
-  border-radius: 2px;
-  border: 1px solid var(--bevel);
-  background: var(--surface);
-  color: var(--ink);
-  font-family: var(--sans);
-  font-size: 14px;
-}
-
 /* the export ceremony — spec §8.
    `visibility: hidden`, not only `opacity: 0`: an invisible-but-present control
    is still in the tab order, so a keyboard user tabbing during the ceremony
@@ -172,6 +148,7 @@ canvas#cv:not([width]) { visibility: hidden; }
    the interface and this is the rack of mounts beside it. The name rides on
    `title` and `aria-label` (see `src/ui/rail.ts`), so nothing here may rely on
    text content. */
+.mount { position: relative; flex: none; display: flex; }
 .print {
   position: relative;
   flex: none;
@@ -218,10 +195,41 @@ canvas#cv:not([width]) { visibility: hidden; }
   bottom: 3px;
   border-top: 1px solid var(--bevel);
 }
+/* The × on a saved template: a corner cell cut out of the chip by two bevel
+   hairlines and holding a small × glyph, so removing a mount reads as part of
+   the same material language as the mark that says a chip is yours. It is not
+   `--brass`: brass is the premium marker and the only metal in this app.
+   It sits inside the chip's own box rather than hanging outside it — the rail
+   is `overflow-x: auto`, which clips on the block axis too — and its surface is
+   the chip's, so it paints out the corner of `.on`'s inset ring rather than
+   letting the ring cross the cell. */
+.del {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--bevel);
+  border-bottom: 1px solid var(--bevel);
+  border-top-right-radius: 1px;
+  background: var(--surface);
+  color: var(--quiet);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.del:hover { color: var(--ink); }
+
 /* the chips are the app's second focus stop after the drop zone, and a border
    colour alone is a weak one at this size */
 .print:focus-visible,
+.del:focus-visible,
 .drop:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* the × is inside the chip, so its outline goes in rather than out */
+.del:focus-visible { outline-offset: -3px; }
 .acts { display: flex; }
 .btn {
   font-family: var(--sans);
