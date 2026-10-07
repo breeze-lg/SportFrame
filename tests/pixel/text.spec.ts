@@ -59,14 +59,34 @@ test('[RF-3] an overlong title shrinks and never crosses its max width', async (
 // `drawText` promises a band `W * 0.86 * k` wide, centred on `W / 2`
 // (textAlign 'center'), so the allowed x range is
 // [ (W - allowed) / 2 , (W + allowed) / 2 ].
+//
+// That promise is two claims, and they are asserted as two claims so that a
+// red run says which one broke:
+//
+//   (a) the render honoured the size the fit chose — the ink lies inside the
+//       advance box `ctx.measureText` reports for the fitted string, in this
+//       browser, with this font. Comparing the render against the current
+//       environment's *own* measurement is what makes this half
+//       font-independent: a metrics change moves both sides together, instead
+//       of turning the test red for a defect that is not there.
+//   (b) the fit itself succeeded — that measured box lies inside the band.
+//       No rasterisation is involved in this half at all.
+//
+// Neither half is compared against a width hard-coded from a measurement made
+// on one particular machine. The old single assertion compared the ink
+// directly against the band, which left 0.08px of physical margin per edge
+// (the fit shrinks to *exactly* the band) and made a rasteriser or font
+// metrics change look like a regression.
 // ---------------------------------------------------------------------------
 
 /**
  * `size` in a slot is a scale input, not px: `drawText` turns it into
  * `(size / 100) * H * 0.20 * k`. On a 600px canvas, 400 therefore asks for a
- * 480px font, at which these two strings measure 15 360px (CJK) and 10 060px
- * (Latin) — 20-30x the 516px band, so `drawText` genuinely has to shrink them.
- * A string that only just overflowed would prove nothing.
+ * 480px font, at which these two strings measure 15 360px (CJK) and 10 334px
+ * (Latin) — 29.8x and 20.0x the 516px band, so `drawText` genuinely has to
+ * shrink them. A string that only just overflowed would prove nothing, so
+ * `expectGenuinelyOverflows` below re-checks that property on every run
+ * rather than trusting this comment to stay true.
  */
 const OVERLONG = {
   cjk: '光落在该落的地方光落在该落的地方光落在该落的地方光落在该落的地方',
@@ -84,27 +104,52 @@ const OVERLONG_CFG = {
 }
 
 /**
- * ±1px absorbs antialiasing at the glyph edge. Measured on this machine, the
- * band is [42, 558] and the ink lands at [42, 557] (CJK) and [42, 556]
- * (Latin) — so the slack is 1px of real headroom on `minX`, not room to
- * spare. Do not widen it: a 1px overshoot is a real overshoot, and the
- * invariant is "never", not "usually".
+ * What one `drawText` call did, harvested from the page.
+ *
+ * `minX`/`maxX` are the *ink*: the horizontal extent of the pixels the render
+ * lit up. `boxLeft`/`boxRight` are the *measured* advance box of the fitted
+ * string — `ctx.measureText` at the size the fit returned, with the font
+ * `drawText` builds from that size. These are deliberately different
+ * quantities, and the assertions below keep them apart: ink outside a good box
+ * means the render ignored the fit; a box outside the band means the fit
+ * itself was wrong.
  */
-function expectInsideBand(r: { minX: number; maxX: number; W: number; allowed: number }): void {
-  expect(r.maxX, 'drawText drew no ink at all — the test would pass vacuously').toBeGreaterThanOrEqual(0)
-  expect(r.minX).toBeGreaterThanOrEqual(Math.floor((r.W - r.allowed) / 2) - 1)
-  expect(r.maxX).toBeLessThanOrEqual(Math.ceil((r.W + r.allowed) / 2) + 1)
+type TextProbe = {
+  /** leftmost lit pixel column, or `W` if nothing was drawn */
+  minX: number
+  /** rightmost lit pixel column, or -1 if nothing was drawn */
+  maxX: number
+  W: number
+  /** the width `drawText` may use: `W * 0.86 * k` */
+  allowed: number
+  /** the unfitted font size `drawText` starts from: `(slot.size / 100) * H * 0.20 * k` */
+  base: number
+  /** the size `measureToFit` returned for this string */
+  fitted: number
+  /** what the string wants at `base`, before any shrinking */
+  unfittedWidth: number
+  /** what the string measures at `fitted`, i.e. after shrinking */
+  fittedWidth: number
+  /** left edge of that advance box, centred on `W / 2` by textAlign 'center' */
+  boxLeft: number
+  /** right edge of that advance box */
+  boxRight: number
 }
 
-/** Renders `text` through `drawText` over a black canvas and returns the
- *  horizontal extent of anything lit up. */
-async function inkExtent(page: Page, text: string) {
+/** Renders `text` through `drawText` over a black canvas, scans the pixels it
+ *  lit, and measures the same string the same way `drawText` measures it. */
+async function probeText(page: Page, text: string): Promise<TextProbe> {
   return page.evaluate(
     ({ s, cfg }) => {
       const f = (window as any).__frame
-      const { drawText } = (window as any).__frameCore
+      const { drawText, measureToFit, frameFont } = (window as any).__frameCore
       const W = 600
       const H = 600
+      const k = 1
+      const allowed = W * 0.86 * k
+      // OVERLONG_CFG has exactly one slot, so these reads are non-null.
+      const { size, weight } = cfg.slots[0]!
+      const base = (size / 100) * H * 0.20 * k
 
       f.setSize(W, H)
       const ctx = f.ctx()
@@ -112,7 +157,7 @@ async function inkExtent(page: Page, text: string) {
       ctx.fillStyle = '#000000'
       ctx.fillRect(0, 0, W, H)
 
-      drawText(ctx, { W, H }, cfg, { title: s }, { x: 0, y: 0, w: W, h: H }, 1)
+      drawText(ctx, { W, H }, cfg, { title: s }, { x: 0, y: 0, w: W, h: H }, k)
 
       let minX = W
       let maxX = -1
@@ -127,18 +172,121 @@ async function inkExtent(page: Page, text: string) {
           }
         }
       }
-      return { minX, maxX, W, allowed: W * 0.86 }
+
+      // Measure with the very font `drawText` is contracted to render with:
+      // the same helper, the same arguments, the same weight. Nothing here is
+      // read back from the drawn canvas, and nothing is hard-coded.
+      ctx.font = frameFont(base, weight)
+      const unfittedWidth = ctx.measureText(s).width
+      const fitted = measureToFit(ctx, s, allowed, (n: number) => frameFont(n, weight), base)
+      ctx.font = frameFont(fitted, weight)
+      const fittedWidth = ctx.measureText(s).width
+      const cx = W * 0.5 * k // textAlign 'center', so the box straddles `cx`
+
+      return {
+        minX,
+        maxX,
+        W,
+        allowed,
+        base,
+        fitted,
+        unfittedWidth,
+        fittedWidth,
+        boxLeft: cx - fittedWidth / 2,
+        boxRight: cx + fittedWidth / 2,
+      }
     },
     { s: text, cfg: OVERLONG_CFG },
   )
 }
 
+/**
+ * "Something was drawn at all" — asserted before anything about *where*, since
+ * on an empty canvas every "inside" claim below is vacuously true. `maxX`
+ * starts at -1 and only grows when a pixel is lit, so this is exactly the
+ * emptiness guard.
+ */
+function expectSomethingWasDrawn(p: TextProbe): void {
+  expect(p.maxX, 'drawText drew no ink at all — the test would pass vacuously').toBeGreaterThanOrEqual(0)
+}
+
+/**
+ * [Finding 2] The fixture must still be a wide-margin overflow, or the two
+ * assertions below decay into "a short string draws inside its box" and pass
+ * no matter what `drawText` does. Measured on this machine: the CJK fixture
+ * wants 15 360px at the 480px `base` and the Latin 10 334px, against a 516px
+ * band — 29.8x and 20.0x over, so shrinking is not a close call.
+ *
+ * The 8x threshold (4 128px here) is deliberately far below those ratios and
+ * far above 1x: 2.5x of headroom under the smaller measurement, so honest font
+ * variation cannot make this a false red, while anything that stops
+ * overflowing by an order of magnitude — a smaller `size`, a shorter fixture,
+ * a font whose advances collapse — fails loudly instead of silently
+ * defanging the tests.
+ */
+function expectGenuinelyOverflows(p: TextProbe): void {
+  expect(
+    p.unfittedWidth,
+    `the fixture wants ${p.unfittedWidth.toFixed(1)}px at size ${p.base} against a ` +
+      `${p.allowed}px band: it no longer overflows by a wide margin, so shrinking is ` +
+      `not required and these tests would prove nothing`,
+  ).toBeGreaterThan(p.allowed * 8)
+}
+
+/**
+ * [Finding 1, part (b)] The fit succeeded: the box the fitted string measures
+ * is inside the band. This is the real invariant, and rasterisation plays no
+ * part in it — both sides are `measureText` output.
+ *
+ * The 0.5px tolerance is the same one `[RF-3] an overlong title shrinks…`
+ * above uses on the same quantity, and it absorbs sub-pixel non-linearity in
+ * how advances scale with font size. Measured here the fit lands 0.08px inside
+ * the band per edge (box [42.08, 557.92] against band [42, 558]), so 0.5px is
+ * ~6x the observed residual. It cannot hide a real fit failure: with no
+ * shrinking at all the CJK fixture's box is 14 844px wider than the band, so
+ * the miss is four orders of magnitude larger than the tolerance.
+ */
+function expectFitInsideBand(p: TextProbe): void {
+  expect(p.boxLeft).toBeGreaterThanOrEqual((p.W - p.allowed) / 2 - 0.5)
+  expect(p.boxRight).toBeLessThanOrEqual((p.W + p.allowed) / 2 + 0.5)
+}
+
+/**
+ * [Finding 1, part (a)] The render honoured the fit: every lit pixel lies
+ * inside the advance box `ctx.measureText` reports *in this browser*, ±1px for
+ * antialiasing at the glyph edge. Because the expectation is the environment's
+ * own measurement rather than a width baked in here, a font metrics change
+ * moves both sides together and cannot turn this red on its own — only a
+ * render that ignores the fitted size can.
+ *
+ * The ±1px covers the measured residual, which is 0.08px: the ink's edge pixel
+ * sits at x=42 (CJK and Latin) while the box starts at x=42.08. Do not widen
+ * it: a 1px overshoot is a real overshoot, and the invariant is "never", not
+ * "usually". With `expectFitInsideBand` above, the composition still bounds
+ * the ink at the band edge + 1.5px.
+ */
+function expectInkInsideMeasuredBox(p: TextProbe): void {
+  expect(p.minX).toBeGreaterThanOrEqual(p.boxLeft - 1)
+  expect(p.maxX).toBeLessThanOrEqual(p.boxRight + 1)
+}
+
+// Ordered so a failure is read in cause order: nothing drawn (vacuous) →
+// fixture no longer overflows (vacuous) → the fit is wrong → the render
+// ignored the fit.
 test('[RF-3] an overlong CJK title draws no ink outside its allowed band', async ({ page }) => {
-  expectInsideBand(await inkExtent(page, OVERLONG.cjk))
+  const p = await probeText(page, OVERLONG.cjk)
+  expectSomethingWasDrawn(p)
+  expectGenuinelyOverflows(p)
+  expectFitInsideBand(p)
+  expectInkInsideMeasuredBox(p)
 })
 
 test('[RF-3] an overlong Latin title draws no ink outside its allowed band', async ({ page }) => {
-  expectInsideBand(await inkExtent(page, OVERLONG.latin))
+  const p = await probeText(page, OVERLONG.latin)
+  expectSomethingWasDrawn(p)
+  expectGenuinelyOverflows(p)
+  expectFitInsideBand(p)
+  expectInkInsideMeasuredBox(p)
 })
 
 /**
