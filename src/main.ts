@@ -5,6 +5,7 @@ import { drawMat } from './core/mat'
 import { drawBackground } from './core/background'
 import { drawText, measureToFit, frameFont } from './core/text'
 import { render } from './core/render'
+import { showCeremony } from './ui/export'
 
 initTheme()
 
@@ -49,4 +50,11 @@ if (new URLSearchParams(location.search).has('dev')) {
     render,
   }
   ;(window as unknown as { __frame: typeof api }).__frame = api
+}
+
+// Interim dev handle for Task 9 only — the export ceremony's pixel test runs
+// before the shell exists, so it cannot wait for Task 12's consolidated block.
+// Task 12 folds this into that block.
+if (new URLSearchParams(location.search).has('dev')) {
+  ;(window as unknown as Record<string, unknown>).__frameCeremony = { showCeremony }
 }
