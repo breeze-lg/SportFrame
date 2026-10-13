@@ -8,10 +8,11 @@ import { drawPlate, plateFields } from './core/plate'
 import { initTheme } from './ui/theme'
 import { createState } from './ui/state'
 import { toast } from './ui/toast'
-import { renderRail } from './ui/rail'
+import { renderRail, chipThumb } from './ui/rail'
+import { renderFields } from './ui/fields'
 import { plaqueText } from './ui/plaque'
 import { loadCustom, saveCustom, browserStorage, sessionStore } from './ui/custom'
-import type { Template } from './core/types'
+import type { Size, Template, TextSlotId } from './core/types'
 import { wireInput } from './ui/input'
 import { readExif } from './core/exif'
 import { isUnlocked, canExport } from './entitlements'
@@ -35,6 +36,21 @@ const cv = document.getElementById('cv') as HTMLCanvasElement
 const ctx = cv.getContext('2d')
 
 /**
+ * The canvas a template makes for the photograph in hand. This is the one place
+ * the poster's layout size is decided: `draw` renders it and the rail's readout
+ * names it, so the number the dock shows is the number the wall is drawn at
+ * rather than a second opinion about it.
+ */
+function canvasSize(template: Template): Size {
+  const photo = state.photo
+  return resolveSize(
+    template.canvas.ratio,
+    state.longEdge,
+    photo ? { width: photo.width, height: photo.height } : undefined,
+  )
+}
+
+/**
  * The one place the preview is laid out, at `k = 1`, from the same `render`
  * the export calls at `k`. A second layout path here — anything that computed
  * a position the renderer would not — would let a user export a poster they
@@ -48,10 +64,7 @@ function draw(): void {
   // here would hang a poster-sized rectangle of background on that empty wall.
   if (!ctx || !template || !photo) return
 
-  const size = resolveSize(template.canvas.ratio, state.longEdge, {
-    width: photo.width,
-    height: photo.height,
-  })
+  const size = canvasSize(template)
   state.size = size
   // Sized by assignment and never by CSS: `canvas.width = n` reflects to the
   // `width` attribute, which is what releases the guard above and reveals the
@@ -104,6 +117,13 @@ function savedTemplates(): Template[] {
  * a chip that can be picked; this is the function both the boot and the save
  * handler call, which is what makes a just-saved template appear without a
  * reload.
+ *
+ * The chips are prints — the user's own photograph, cropped to the chip (see
+ * `chipThumb`) — and the header beside 样式 names the mount that is on and the
+ * file it will produce. Both are painted here rather than at each call site
+ * because both go stale at exactly the same moments: a new photograph, a new
+ * pick, a save, a delete. A rail that showed the picture of the frame before
+ * last is the same defect as a chip that says nothing.
  */
 function paintRail(activeId: string | null): void {
   const saved = savedTemplates()
@@ -114,7 +134,38 @@ function paintRail(activeId: string | null): void {
     pick,
     new Set(saved.map((t) => t.id)),
     removeSaved,
+    chipThumb(state.photo),
   )
+  const info = document.getElementById('rail-info')
+  if (info) {
+    const t = state.template
+    // The poster's own size, not the file's: `state.size` is the 1× canvas and
+    // the export doubles it, so a readout in export pixels would state a number
+    // that appears nowhere on screen.
+    const size = t ? canvasSize(t) : null
+    info.textContent = t && size ? `${t.name} · ${size.W}×${size.H}` : ''
+  }
+}
+
+/**
+ * 文字 — the fields for whatever the current template prints.
+ *
+ * Called only where the *template* changes (a pick, a delete that moves the
+ * selection, the first paint), never from `draw`. `draw` runs on every
+ * keystroke, and rebuilding these inputs there would take the caret out of the
+ * field the user is typing into on the first character they type.
+ */
+const fieldBox = document.getElementById('fields') as HTMLElement
+const fieldRow = document.getElementById('field-row') as HTMLElement
+
+function onText(id: TextSlotId, value: string): void {
+  state.text[id] = value
+  draw()
+}
+
+function paintFields(): void {
+  const drawn = renderFields(fieldRow, state.template?.text, state.text, onText)
+  fieldBox.hidden = drawn === 0
 }
 
 function pick(id: string): void {
@@ -127,6 +178,7 @@ function pick(id: string): void {
   state.template = t
   paintRail(id)
   paintPlaque(t)
+  paintFields()
   draw()
 }
 
@@ -156,6 +208,10 @@ wireInput(
   (photo) => {
     state.photo = photo
     state.exif = photo.exif
+    // The rail is prints of this photograph, so it is repainted here and not
+    // only on a pick: without this the chips stay blank mounts until the user
+    // happens to choose a style, which is the one moment they are not needed.
+    paintRail(state.template?.id ?? null)
     draw()
     toast(`已载入 ${photo.width} × ${photo.height}`)
   },
@@ -270,6 +326,9 @@ function removeSaved(id: string): void {
   paintRail(state.template?.id ?? null)
   if (wasActive && state.template) {
     paintPlaque(state.template)
+    // the fields belong to the template, so a delete that moves the selection
+    // has to move them with it
+    paintFields()
     // the canvas is showing a template that no longer exists until this runs
     draw()
   }
@@ -308,6 +367,7 @@ document.getElementById('saveTpl')?.addEventListener('click', () => {
 })
 
 paintRail(state.template?.id ?? null)
+paintFields()
 draw()
 
 // ---------------------------------------------------------------------------
@@ -350,6 +410,10 @@ if (new URLSearchParams(location.search).get('demo') === '1') {
   im.onload = () => {
     state.photo = { el: im, width: im.naturalWidth, height: im.naturalHeight, name: 'demo', exif: null }
     state.exif = null
+    // same reason as the loaded-photo path above: the chips are prints of this
+    // photograph, and the demo is the front door — blank mounts there would be
+    // the defect rather than a corner of it
+    paintRail(state.template?.id ?? null)
     draw()
   }
   im.src = d.toDataURL()

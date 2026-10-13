@@ -339,3 +339,106 @@ test('[RF-3] the Latin fixture discriminates weights, so a mismatch is detectabl
   expect(m.matchedWidth).toBeLessThanOrEqual(m.maxW + 0.5)
   expect(m.mismatchedWidth).toBeGreaterThan(m.matchedWidth)
 })
+
+// ---------------------------------------------------------------------------
+// More than one slot on one anchor
+//
+// The anchor used to position each slot independently, which is invisible on a
+// one-slot template and wrong on a two-slot one: 经典 declares a title and a
+// subtitle, both anchored `bottom`, and both were drawn on `H * 0.90` — the
+// subtitle printed through the title. `drawText` now stacks a block, so these
+// pin the property that makes that impossible rather than the arithmetic that
+// happens to produce it: N lines occupy N separated bands of ink, and the end
+// of the block the anchor names is where the block actually ends.
+// ---------------------------------------------------------------------------
+
+type Bands = { bands: number[][]; H: number }
+
+/** Lit row bands on a black canvas, grouped contiguous rows per band. */
+async function inkBands(page: Page, anchor: string, slots: unknown[], values: object): Promise<Bands> {
+  return page.evaluate(
+    ({ anchor, slots, values }) => {
+      const f = (window as any).__frame
+      const { drawText } = (window as any).__frameCore
+      const W = 600
+      const H = 600
+      f.setSize(W, H)
+      const ctx = f.ctx()
+      ctx.clearRect(0, 0, W, H)
+      ctx.fillStyle = '#000000'
+      ctx.fillRect(0, 0, W, H)
+
+      drawText(ctx, { W, H }, { anchor, slots }, values, { x: 0, y: 0, w: W, h: H }, 1)
+
+      const bands: number[][] = []
+      for (let y = 0; y < H; y++) {
+        const row = f.sample(0, y, W, 1)
+        let lit = false
+        for (let i = 0; i < row.length; i += 4) {
+          if (row[i] > 40) {
+            lit = true
+            break
+          }
+        }
+        const last = bands[bands.length - 1]
+        if (!lit) continue
+        if (last && y === last[1]! + 1) last[1] = y
+        else bands.push([y, y])
+      }
+      const rows = bands.reduce((n, b) => n + (b[1]! - b[0]! + 1), 0)
+      return { bands, H, rows }
+    },
+    { anchor, slots, values },
+  )
+}
+
+/** 经典's own pair, in its own order, at the anchor it declares. */
+const CLASSIC_PAIR = [
+  { id: 'sub', size: 14, weight: 500, color: '#ffffff' },
+  { id: 'title', size: 34, weight: 700, color: '#ffffff' },
+]
+const CLASSIC_WORDS = { sub: 'F/8 · 85mm', title: '经典' }
+
+test('two bottom-anchored slots stack, and the block ends at the bottom margin', async ({ page }) => {
+  await page.goto('/?dev=1')
+  await page.waitForFunction(() => '__frame' in window)
+
+  const r = await inkBands(page, 'bottom', CLASSIC_PAIR, CLASSIC_WORDS)
+
+  // Overprinting draws both slots on one baseline and produces ONE band. Two
+  // bands is the whole point, and a gap of more than a row between them is what
+  // says they are two lines rather than two glyph runs sharing an edge.
+  expect(r.bands.length, `expected two lines of ink, got ${JSON.stringify(r.bands)}`).toBe(2)
+  const gap = r.bands[1]![0]! - r.bands[0]![1]!
+  expect(gap, `the two lines are ${gap}px apart`).toBeGreaterThan(2)
+
+  // `bottom` names the *end* of the block: the last line is the one on the
+  // margin. A block anchored by its first line would leave this ~40px low.
+  const lastBaseline = Math.abs(r.bands[1]![1]! - r.H * 0.9)
+  expect(lastBaseline, `the block ends ${lastBaseline}px from H*0.90`).toBeLessThan(15)
+})
+
+test('three top-anchored slots stack too, including the sign the templates never declare', async ({ page }) => {
+  await page.goto('/?dev=1')
+  await page.waitForFunction(() => '__frame' in window)
+
+  const r = await inkBands(
+    page,
+    'top',
+    [
+      { id: 'title', size: 34, weight: 700, color: '#ffffff' },
+      { id: 'sub', size: 18, weight: 500, color: '#ffffff' },
+      { id: 'sign', size: 12, weight: 400, color: '#ffffff' },
+    ],
+    { title: '经典', sub: 'F/8 · 85mm', sign: '@Breeze' },
+  )
+
+  // Three slots, three bands. `sign` is the one that used to be unable to
+  // render anywhere but on the title's baseline.
+  expect(r.bands.length, `expected three lines of ink, got ${JSON.stringify(r.bands)}`).toBe(3)
+  for (let i = 1; i < r.bands.length; i++) {
+    expect(r.bands[i]![0]! - r.bands[i - 1]![1]!, `lines ${i - 1}/${i} overlap`).toBeGreaterThan(0)
+  }
+  // `top` names the *start* of the block, so the first line is the high one.
+  expect(r.bands[0]![0]!).toBeLessThan(r.H * 0.25)
+})

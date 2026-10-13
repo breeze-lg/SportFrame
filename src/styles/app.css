@@ -111,8 +111,41 @@ canvas#cv:not([width]) { visibility: hidden; }
 }
 .drop small { display: block; font-size: 11.5px; margin-top: 4px; color: var(--faint); }
 .drop.over { border-color: var(--ink); color: var(--ink); }
+.rail-h { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 .rail-h b { font-weight: 400; font-size: 12.5px; color: var(--label); }
+/* The active mount, named: which style is on, and the file it will make. The
+   rail's chips are pictures of the photograph and say nothing by themselves, so
+   this is the one place the current choice is legible in words. Mono, like
+   every other value the app reads out. */
+.rail-h span {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--quiet);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .rail { display: flex; gap: 9px; overflow-x: auto; padding-bottom: 2px; }
+
+/* 文字 — one field per slot the current template prints. The block sets its own
+   `display`, so it needs its own `[hidden]` rule for the same reason
+   `.plaque-row` does: without it, the UA's rule loses and an empty 文字 heading
+   sits on the dock for 留白, which has no typography at all. */
+.fields { display: flex; flex-direction: column; gap: 7px; }
+.fields[hidden] { display: none; }
+.field-row { display: flex; flex-direction: column; gap: 7px; }
+.field {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--bevel);
+  border-radius: 2px;
+  padding: 8px 10px;
+  width: 100%;
+}
+.field::placeholder { color: var(--faint); }
+.field:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; border-color: var(--ink); }
 
 /* 付费标记 — the premium plaque, from the design sheet's `.plaque`: brass text
    on a brass hairline, with the brass dot. `--brass` is the premium marker and
@@ -156,7 +189,14 @@ canvas#cv:not([width]) { visibility: hidden; }
   height: 62px;
   border: 1px solid var(--bevel);
   border-radius: 2px;
-  background: var(--surface);
+  background-color: var(--surface);
+  /* The print inside the mount: the user's photograph, cropped to this box and
+     set inline by `renderRail` (see `chipThumb`). `cover` on an image already
+     cut to the chip's own ratio is an exact fit, and it keeps the chip correct
+     if the box ever changes without the crop. */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   cursor: pointer;
   padding: 0;
 }
@@ -195,6 +235,13 @@ canvas#cv:not([width]) { visibility: hidden; }
   bottom: 3px;
   border-top: 1px solid var(--bevel);
 }
+/* A photograph behind the mount eats the bevel grey: #D6D4CD over arbitrary
+   picture content is a hairline nobody can see, and "this one is yours" is the
+   one thing the rail has to say about a saved chip. Same line, same place, same
+   weight — only the colour moves, and only while there is a print to read it
+   against. With no photograph the chip keeps the bevel grey the design sheet
+   specifies. */
+.print.photo.custom::before { border-top-color: rgba(28, 27, 24, .55); }
 /* The × on a saved template: a corner cell cut out of the chip by two bevel
    hairlines and holding a small × glyph, so removing a mount reads as part of
    the same material language as the mark that says a chip is yours. It is not
@@ -276,5 +323,15 @@ canvas#cv:not([width]) { visibility: hidden; }
     border-top: 0;
     border-right: 1px solid var(--bevel);
     overflow-y: auto;
+  }
+  /* Nine prints, all of them visible. The rail scrolls sideways on a phone,
+     where a thumb-swiped row is the right gesture, but the dock is 340px wide
+     and a scrolling rack hides the last styles behind a scrollbar the platform
+     does not even draw — a picker whose options cannot be seen is not a picker.
+     Wrapping is the same nine prints in two rows. */
+  .rail {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    row-gap: 10px;
   }
 }

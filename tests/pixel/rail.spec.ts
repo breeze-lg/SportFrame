@@ -82,3 +82,53 @@ test('picking a template re-renders the wall through the same spine', async ({ p
   expect([after.w, after.h]).toEqual([before.w, before.h])
   expect(after.hash).not.toBe(before.hash)
 })
+
+/**
+ * The rail's chips are prints of the user's photograph — the treatment the
+ * design sheet gives `.print .rawshot` — so the rack reads as a rack of mounts
+ * rather than nine identical blank rectangles.
+ *
+ * The claim has three parts and they are not the same claim: the chips are
+ * blank until there is a photograph, every chip carries it once there is one
+ * (a rail painted only on a *pick* would leave the user looking at blank mounts
+ * at the exact moment the print matters), and what it carries is the
+ * photograph — a crop with more than one colour in it, not a flat fill.
+ */
+test('every chip carries the photograph once there is one', async ({ page }) => {
+  await page.goto('/')
+
+  const bare = await page
+    .locator('#rail .print')
+    .evaluateAll((els) => els.map((e) => getComputedStyle(e).backgroundImage))
+  expect(bare.every((bg) => bg === 'none'), 'the blank rail should be blank').toBe(true)
+
+  await page.setInputFiles('#file', {
+    name: 'sample.webp',
+    mimeType: 'image/webp',
+    buffer: SAMPLE,
+  })
+  await expect(page.locator('canvas#cv')).toBeVisible()
+
+  const prints = await page
+    .locator('#rail .print')
+    .evaluateAll((els) => els.map((e) => getComputedStyle(e).backgroundImage))
+  expect(prints).toHaveLength(TEMPLATES.length)
+  for (const bg of prints) {
+    expect(bg, 'a chip came back without its print').toMatch(/^url\("data:image\/png;base64,/)
+  }
+
+  const colours = await page.locator('#rail .print').first().evaluate(async (el) => {
+    const url = getComputedStyle(el).backgroundImage.slice(5, -2)
+    const bmp = await createImageBitmap(await (await fetch(url)).blob())
+    const c = document.createElement('canvas')
+    c.width = bmp.width
+    c.height = bmp.height
+    const ctx = c.getContext('2d')!
+    ctx.drawImage(bmp, 0, 0)
+    const d = ctx.getImageData(0, 0, bmp.width, bmp.height).data
+    const seen = new Set<string>()
+    for (let i = 0; i < d.length; i += 4) seen.add(`${d[i]! >> 4},${d[i + 1]! >> 4},${d[i + 2]! >> 4}`)
+    return seen.size
+  })
+  expect(colours, 'the print is a flat fill, not the photograph').toBeGreaterThan(4)
+})

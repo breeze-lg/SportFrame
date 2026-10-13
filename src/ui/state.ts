@@ -1,10 +1,14 @@
-import type { Exif, Photo, Size, Template } from '../core/types'
+import type { Exif, Photo, Size, Template, TextSlotId } from '../core/types'
 
 export type AppState = {
   photo: Photo | null
   exif: Exif | null
   template: Template | null
-  text: Record<string, string>
+  /** What the user has typed, by slot. The app owns these, not the template:
+   *  switching mount keeps the words and lets the new typography set them.
+   *  Keyed by `TextSlotId` so a mistyped slot name is a compile error rather
+   *  than a value `render` silently never reads. */
+  text: Partial<Record<TextSlotId, string>>
   size: Size
   longEdge: number
 }

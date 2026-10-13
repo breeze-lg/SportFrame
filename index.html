@@ -60,7 +60,7 @@
          a cycle. -->
     <input type="file" id="file" accept="image/*" hidden>
 
-    <div class="rail-h"><b>样式</b></div>
+    <div class="rail-h"><b>样式</b><span id="rail-info"></span></div>
     <div class="rail" id="rail"></div>
     <!-- The premium plaque (spec §10): it names the pack when a template is
          premium *and* locked, and v1 ships nothing gated, so it is wired and
@@ -69,6 +69,19 @@
          in the dock, which is testable, where an element that appears and
          disappears is only observable while it is there. -->
     <div class="plaque-row" id="plaque" hidden></div>
+
+    <!-- 文字 — one input per slot the current template prints (see
+         `src/ui/fields.ts`). The row is built by the picker, not written here,
+         because which slots exist is a property of the template: 留白 has no
+         typography, and a field for a slot nothing draws is a control that
+         accepts typing and changes nothing. The whole block, heading included,
+         hides at zero fields — and it carries its own `[hidden]` rule in
+         `app.css` for the same reason `.plaque-row` does: the block sets its
+         own `display`, which would otherwise beat the UA's `[hidden]`. -->
+    <div class="fields" id="fields" hidden>
+      <div class="rail-h"><b>文字</b></div>
+      <div class="field-row" id="field-row"></div>
+    </div>
 
     <div class="acts">
       <!-- Secondary, not primary: saving a template is a detour from the one

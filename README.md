@@ -4,6 +4,11 @@ Turn a good photograph into a framed poster worth posting. Drop in a photo;
 the app puts a white mat, a shadow, a background treatment, and a camera spec
 plate around it, and exports a PNG at social-ready resolution.
 
+Words are optional and typed: the 文字 block offers exactly the slots the chosen
+style prints — 经典 takes a title and a subtitle, 拍立得 and 样张 a title in the
+mat, 留白 none at all — and what you type follows you from style to style. The
+camera plate needs no typing: it is read from the photograph's own EXIF.
+
 Photos never leave the device. There is no backend.
 
 ## Develop
@@ -77,6 +82,19 @@ the guard goes on checking 1440 until you change it by hand.
 
 ## Known limitations
 
+**A rail chip shows the photograph, not a preview of the style.** Each chip is
+the user's own photo cover-cropped to the chip, as `design/style-direction.html`
+specifies for `.print .rawshot`, so the nine chips differ only by the selected
+ring and the brass corner. A true per-style thumbnail would have to render each
+template small — and the frame geometry is absolute pixels tuned to the 1440
+long edge (see above), so a 50×62 render of 样张 would be nonsense. Decoupling
+the geometry from the long edge is the prerequisite, not a chip-level fix.
+
+**存为模板 saves the style, not the words.** The template record has no room for
+text values, so a saved template brings back its typography and the fields come
+up empty; `state.text` is one record for the session. Adding values to the
+record means touching `validateTemplate`, the storage blob and its versioning.
+
 **The 4× export tier is unverified on real WebKit.** 4× is what the spec (§10)
 advertises as the premium unlock, and `src/ui/export.ts` makes it deliverable by
 budgeting canvas *area* per rung (`areaBudget`) and walking a fallback ladder
@@ -89,11 +107,12 @@ real iOS Safari before it is sold to anyone. (Nothing reaches 4× through the UI
 today: the save button asks for 2×, and the premium rung is reachable only
 through `__frameExport`.)
 
-**A saved `sign` text slot is drawn on the title's baseline under a top
-anchor.** 存为模板 copies the template's `text` config, the `sign` slot is
-accepted by validation, and `drawText` offsets only `sub` for `anchor: 'top'` —
-`title` and `sign` both land on `H * 0.10`, overprinted. No built-in uses the
-slot today, so nothing in the shipped nine shows it.
+**The `sign` slot stacks like the rest, and no built-in declares one.** Slots are
+laid out as a block — each line advanced from the one before it by the taller of
+the two sizes — so `title`, `sub` and `sign` each land on their own baseline
+under every anchor, and which end of the block an anchor names depends on the
+anchor (`bottom` grows upward, `top` downward). `tests/pixel/text.spec.ts` pins
+both. Only a hand-edited stored record reaches `sign`.
 
 ## Not built yet
 

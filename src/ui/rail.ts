@@ -1,9 +1,67 @@
-import type { Template } from '../core/types'
+import { cover } from '../core/geometry'
+import type { Photo, Template } from '../core/types'
+
+/** The chip's box in CSS pixels, and the scale its print is cut at. */
+const CHIP_W = 50
+const CHIP_H = 62
+const CHIP_DPR = 2
 
 /**
- * The template rail: one chip per template, drawn as a blank print rather than
- * a labelled button — the wall is the interface, and the rail is the rack of
- * mounts beside it. The name is carried on `title` for a pointer and on
+ * The chip's print: the user's own photograph, cover-cropped to the chip box —
+ * the treatment `design/style-direction.html` specifies for `.print .rawshot`
+ * (`background-size: cover; background-position: 50% 44%`), and the reason the
+ * rail reads as a rack of prints rather than a row of blank mounts.
+ *
+ * Cropped here, once, rather than handing the browser the photograph as a CSS
+ * background: nine chips sharing one `url()` would carry nine copies of the
+ * same multi-megabyte string through style recalculation, and the browser would
+ * re-crop a 27 MP source nine times on every repaint. `cover` is the same
+ * crop arithmetic the poster's own blur background uses, so the rack and the
+ * wall agree about what the photograph looks like.
+ *
+ * The 44% vertical bias is the design's and it is deliberate: a crop centred
+ * dead-on a portrait cuts the top off, which is where a face usually is.
+ *
+ * Memoised on the source URL, because `paintRail` runs on every pick and the
+ * photograph — unlike the rail — has not changed. Returns `null` with no
+ * photograph, which leaves the chip as the blank mount the default state wants.
+ */
+let thumbCache: { src: string; url: string | null } | null = null
+
+export function chipThumb(photo: Photo | null): string | null {
+  if (!photo || photo.width <= 0 || photo.height <= 0) return null
+  const src = photo.el.src
+  if (thumbCache && thumbCache.src === src) return thumbCache.url
+
+  let url: string | null = null
+  const c = document.createElement('canvas')
+  c.width = CHIP_W * CHIP_DPR
+  c.height = CHIP_H * CHIP_DPR
+  const ctx = c.getContext('2d')
+  if (ctx) {
+    const box = cover(photo.width, photo.height, c.width, c.height, 1)
+    // Both offsets are negative by construction (`cover` never returns a box
+    // smaller than the canvas) and match CSS `background-position` semantics:
+    // 0% is the image's top-left edge flush with the box's, 50%/44% is the one
+    // the design asks for.
+    ctx.drawImage(
+      photo.preview ?? photo.el,
+      (c.width - box.w) * 0.5,
+      (c.height - box.h) * 0.44,
+      box.w,
+      box.h,
+    )
+    url = c.toDataURL('image/png')
+  }
+  thumbCache = { src, url }
+  return url
+}
+
+/**
+ * The template rail: one chip per template, drawn as a print rather than a
+ * labelled button — the wall is the interface, and the rail is the rack of
+ * mounts beside it. `thumb` is the photograph, cropped to the chip (see
+ * `chipThumb`); the name is carried on `title` for a pointer and on
  * `aria-label` for everything that reads the page rather than looking at it.
  *
  * `aria-pressed` rather than `aria-selected`: these are toggle buttons in a
@@ -29,6 +87,7 @@ export function renderRail(
   onPick: (id: string) => void,
   customIds: ReadonlySet<string> = new Set(),
   onDelete?: (id: string) => void,
+  thumb: string | null = null,
 ): void {
   host.textContent = ''
   for (const t of templates) {
@@ -48,6 +107,14 @@ export function renderRail(
     if (saved) b.classList.add('custom')
     b.type = 'button'
     b.title = t.name
+    // The print itself. Inline rather than a class, because the image is the
+    // user's and a stylesheet cannot know its URL; `--surface` behind it stays
+    // the chip's colour until a photograph exists. `.photo` is what tells
+    // `app.css` there is picture content under the marks.
+    if (thumb) {
+      b.style.backgroundImage = `url("${thumb}")`
+      b.classList.add('photo')
+    }
     b.setAttribute('aria-label', t.name)
     b.setAttribute('aria-pressed', t.id === activeId ? 'true' : 'false')
     b.addEventListener('click', () => onPick(t.id))
