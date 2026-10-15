@@ -65,7 +65,7 @@ be served over HTTP — ES modules do not load from `file://`.
 | Query | Effect |
 |---|---|
 | `?dev=1` | Exposes `window.__frame`, `__frameCore`, `__frameTemplates`, `__frameCeremony`, `__frameExport` for tests and console poking |
-| `?demo=1` | Loads a procedurally generated photograph into the list — no file needed to try the app |
+| `?demo=1` | Loads a procedurally generated photograph into the app — no file needed to try it. A sandbox: it neither reads nor writes the session, so a reload is always the same one-photograph demo and a real session in the same browser is never touched |
 | `?demo=1&tpl=spec-sheet` | The demo photo with a named template; `?tpl` is read only alongside `?demo=1` |
 
 ## Layout

@@ -61,6 +61,24 @@ import './styles/app.css'
 
 initTheme()
 
+/**
+ * `?demo=1` — the app's own front door (see the foot of this module), and a
+ * sandbox: it reads nothing and it writes nothing.
+ *
+ * The demo photograph is generated, so it is not the user's work, and a visit
+ * to this URL must not touch what is. It used to be persisted like any other
+ * photograph — which meant a reload of `?demo=1` restored the demo it had stored
+ * and then added a second one, and its list grew by one every time the page was
+ * refreshed. It also meant a demo visit wrote a generated photograph into a real
+ * session, where the user had to remove it by hand.
+ *
+ * The rule is therefore one flag, enforced in the two places that would
+ * otherwise write: `persistSession` and `keepPhotos`. Reading is skipped too, so
+ * a reload of this URL is always the same one-photograph demo — which is what
+ * its other callers want: a screenshot, a first look, a reviewer's click.
+ */
+const demoMode = new URLSearchParams(location.search).get('demo') === '1'
+
 const state = createState({ template: TEMPLATES[0] ?? null })
 const cv = document.getElementById('cv') as HTMLCanvasElement
 const ctx = cv.getContext('2d')
@@ -181,8 +199,11 @@ const recordStore = browserStorage()
  * is a few hundred bytes of JSON into `localStorage`, so the price is a
  * synchronous write that no user can perceive, and the alternative — a
  * debounce — is a window in which the app forgets something the user just did.
+ *
+ * Silent in demo mode: see `demoMode`.
  */
 function persistSession(): void {
+  if (demoMode) return
   saveSession(recordStore, sessionOf(state))
 }
 
@@ -419,6 +440,8 @@ function photoChanged(): void {
  * a dropped key an index, and every store moves that array.
  */
 async function keepPhotos(added: Photo[]): Promise<void> {
+  // Demo photographs are not the user's work and are not kept: see `demoMode`.
+  if (demoMode) return
   let evicted = 0
   let refused = 0
   for (const photo of added) {
@@ -722,7 +745,7 @@ draw()
 // ---------------------------------------------------------------------------
 const restored = loadSession(recordStore)
 
-if (restored) {
+if (restored && !demoMode) {
   state.text = restored.text
   if (restored.template) {
     // A stored built-in comes back as the singleton it is, not as a copy of it.
@@ -742,7 +765,7 @@ if (restored) {
   draw()
 }
 
-if (restored && restored.photos.some((p) => p.key !== '')) {
+if (restored && !demoMode && restored.photos.some((p) => p.key !== '')) {
   const entries = restored.photos
   void (async () => {
     try {
@@ -780,11 +803,16 @@ if (restored && restored.photos.some((p) => p.key !== '')) {
 // reason: it calls `pick`, and `pick` reads `rail`, a `const` declared above.
 // Running earlier would be a temporal-dead-zone crash, not a race.
 //
-// The photo is `demo`-named and EXIF-less on purpose: the spec plate is the
+// The photograph is `demo`-named and EXIF-less on purpose: the spec plate is the
 // one surface that must *not* appear unless real metadata is behind it, so the
 // demo is also the standing check that it stays absent.
+//
+// It is not stored, and a visit here neither reads nor writes the session
+// (`demoMode`): a generated photograph is not the user's work, and keeping it —
+// which this used to do — made a reload of this URL restore the demo it had
+// stored and then add another one, so the list grew by one per refresh.
 // ---------------------------------------------------------------------------
-if (new URLSearchParams(location.search).get('demo') === '1') {
+if (demoMode) {
   const d = document.createElement('canvas')
   d.width = 1400
   d.height = 1050
@@ -817,9 +845,9 @@ if (new URLSearchParams(location.search).get('demo') === '1') {
     }
     useList(addPhotos(photoList(), [demo]))
     photoChanged()
-    // ...and it persists like any other photograph, so a reload during a demo
-    // comes back to the demo rather than to the bare wall behind it.
-    void keepPhotos([demo])
+    // No `keepPhotos`: the demo photograph is not the user's work and does not
+    // go to the store (see `demoMode`). What that buys is a `?demo=1` reload
+    // that is the same one-photograph demo every time.
   }
   im.src = d.toDataURL()
 

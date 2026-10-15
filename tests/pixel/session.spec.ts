@@ -56,7 +56,9 @@ async function digest(page: Page): Promise<number> {
 }
 
 /** How many photographs the byte store is holding. The number the *record* keeps
- *  is not evidence: the point of removing a photograph is that its bytes go. */
+ *  is not evidence: the point of removing a photograph is that its bytes go.
+ *  A database that was never created answers zero — nothing is stored, which is
+ *  what the caller is asking — and only an error answers -1. */
 async function storedBytes(page: Page): Promise<number> {
   return page.evaluate(
     () =>
@@ -64,7 +66,7 @@ async function storedBytes(page: Page): Promise<number> {
         const request = indexedDB.open('frame-app-photos')
         request.onsuccess = () => {
           const db = request.result
-          if (!db.objectStoreNames.contains('photos')) return resolve(-1)
+          if (!db.objectStoreNames.contains('photos')) return resolve(0)
           const got = db.transaction('photos', 'readonly').objectStore('photos').count()
           got.onsuccess = () => resolve(got.result)
           got.onerror = () => resolve(-1)
@@ -163,6 +165,50 @@ test('removing a photograph takes its bytes with it', async ({ page }) => {
   await expect(page.locator('.photo-list .ph')).toHaveCount(1)
   await expect(row(page, 'sample')).toHaveAttribute('aria-pressed', 'true')
   await expect(page.locator('canvas#cv')).toBeVisible()
+})
+
+test('?demo=1 is a sandbox: one photograph, and the same one every reload', async ({ page }) => {
+  // The bug this pins: the demo photograph used to be stored like any other, so
+  // a reload of this URL restored the demo it had stored and then added a second
+  // one — the list grew by one per refresh (1, 2, 3, 4…).
+  await page.goto('/?demo=1')
+  await expect(page.locator('.photo-list .ph')).toHaveCount(1)
+  await expect(row(page, 'demo')).toHaveAttribute('aria-pressed', 'true')
+  await expect(count(page)).toHaveText('1 / 1')
+
+  for (let i = 0; i < 3; i++) {
+    await page.reload()
+    await expect(page.locator('.photo-list .ph'), `reload ${i + 1} grew the list`).toHaveCount(1)
+    await expect(count(page)).toHaveText('1 / 1')
+  }
+
+  // And it wrote nothing at all: a sandbox, not a session with one photograph in
+  // it. The record is the evidence — the bytes store would be the other half.
+  const record = await page.evaluate(() => localStorage.getItem('frame-app-session-v1'))
+  expect(record, 'a demo visit wrote a session record').toBeNull()
+  expect(await storedBytes(page)).toBe(0)
+})
+
+test('a demo visit leaves a real session alone', async ({ page }) => {
+  await page.goto('/')
+  await load(page, sampleAndCamera)
+  await row(page, 'camera').click()
+  await chip(page, '拍立得').click()
+  await expect(count(page)).toHaveText('2 / 2')
+
+  // ...off to the demo, which generates a photograph of its own
+  await page.goto('/?demo=1')
+  await expect(page.locator('.photo-list .ph')).toHaveCount(1)
+  await expect(row(page, 'demo')).toHaveCount(1)
+
+  // ...and back: the two photographs, the row that was on the wall, and the
+  // mount. A generated photograph must not end up in the user's list to be
+  // removed by hand.
+  await page.goto('/')
+  await expect(page.locator('.photo-list .ph')).toHaveCount(2)
+  await expect(row(page, 'demo')).toHaveCount(0)
+  await expect(row(page, 'camera')).toHaveAttribute('aria-pressed', 'true')
+  await expect(chip(page, '拍立得')).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('a session that cannot be stored costs the session and nothing else', async ({ page }) => {
