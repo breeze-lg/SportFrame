@@ -43,15 +43,36 @@
 </script>
 </head>
 <body>
+<!--
+  The shell, in the order a poster is made: the photograph, the wall, the rack,
+  the numbers. Three columns on a desk — photographs, wall with the styles under
+  it, adjustments — and one stack on a phone, where the same four things arrive
+  in the same order with the photograph list behind a button
+  (`.topbar #photos-open`) rather than pinned open beside everything else.
+
+  The phone's shape follows a camera app's own editor: 取消 · 撤销重做 · 保存
+  across the top, the poster in the middle with its caption under it, then the
+  collections, the rack of styles, and the row of panels (文字 / 画面) at the
+  bottom. What is taken from it is the arrangement; the palette, the hairlines
+  and the marks stay this app's own — see `src/styles/design` and `app.css`.
+-->
 <div class="app">
   <!-- 照片 — the left column: every photograph loaded this session, one row
        each, with the wall's own marked. The list is built by `src/ui/photos.ts`
        from the state, and the drop zone is pinned under it rather than above,
        so what a returning user does first (switch photograph) is at the top of
        the column and what a new user does first (add one) is the last row they
-       reach. -->
+       reach. Under 901px the whole column becomes a sheet: `#photos-open` in
+       the top bar toggles `body.photos-open`, and `.drop` travels with it. -->
   <aside class="photos" id="photos">
-    <div class="col-h"><b>照片</b><span id="photo-count"></span></div>
+    <div class="col-h">
+      <b>照片</b>
+      <span id="photo-count"></span>
+      <!-- The sheet's own way out. On a phone the sheet covers the button that
+           opened it, so the bar's button cannot be its own close. On a desk this
+           is hidden with the sheet's own sheet-ness. -->
+      <button class="sheet-x" id="photos-close" type="button" aria-label="收起照片列表">×</button>
+    </div>
     <div class="photo-list" id="photo-list"></div>
     <!-- `#file` is `hidden`, so this div is the only way to a photo for a
          keyboard user: it needs a tab stop and a button role, and `wireInput`
@@ -63,66 +84,135 @@
          a cycle. `multiple` because the list is a list. -->
     <input type="file" id="file" accept="image/*" multiple hidden>
   </aside>
+  <!-- Tapping away closes the sheet. A sheet with one way out, and that way out
+       behind the sheet, is a trap; this is the other way out. Hidden above the
+       breakpoint, where there is no sheet to dismiss. -->
+  <div class="scrim" id="scrim"></div>
 
-  <!-- The wall, and the rack of styles beneath it. The styles sit below the
-       poster rather than in a side column because choosing one is a judgement
-       about what is on the wall, and a strip of previews reads left-to-right as
-       alternatives to the thing directly above them. -->
   <main class="stage" id="stage">
+    <!-- The phone's top bar — `display: none` above the breakpoint, where the
+         same three things live in the columns themselves. 照片 first because on
+         a phone the list is behind it and a first-time visitor has to be able to
+         reach the way in; then the two arrows, then 保存, which is the action
+         the screen exists for. `#save-top` and `#save` are the same handler and
+         only one of them is ever on screen. -->
+    <header class="topbar" id="topbar">
+      <button class="btn btn-quiet" id="photos-open" aria-controls="photos" aria-expanded="false">照片<span id="photos-n"></span></button>
+      <div class="hist">
+        <button class="icon" id="undo" type="button" title="撤销" aria-label="撤销">↺</button>
+        <button class="icon" id="redo" type="button" title="重做" aria-label="重做">↻</button>
+      </div>
+      <button class="btn btn-primary" id="save-top">保存</button>
+    </header>
+
     <div class="wall" id="wall">
-      <canvas id="cv"></canvas>
-      <div class="toast" id="toast"></div>
+      <div class="wall-pane">
+        <canvas id="cv"></canvas>
+        <!-- The bare wall, with the one thing a new visitor needs on it. On a
+             desk the drop zone is a column away and visible; on a phone the
+             list is a sheet, so the empty wall carries its own way in rather
+             than leaving a blank screen with a button in a drawer. Shown by
+             `paintPhotos` and only under the breakpoint. -->
+        <div class="wall-empty" id="wall-empty" hidden>
+          <p>还没有照片</p>
+          <button class="btn" id="add-photo" type="button">添加照片</button>
+        </div>
+        <!-- In the pane rather than in the wall: the toast is a remark about the
+             poster, and the pane's bottom edge is the poster's own — anchored
+             to the wall it would land on the caption. -->
+        <div class="toast" id="toast"></div>
+      </div>
+
+      <!-- The mount, named, in the poster's own margin — the reference editor's
+           title block, and the one place the current style is legible in words
+           rather than as a picture of a picture. `paintRail` fills both lines:
+           the name, and the template's `tagline`. -->
+      <div class="poster-cap" id="poster-cap">
+        <b id="cap-name"></b>
+        <span id="cap-tag"></span>
+      </div>
     </div>
 
+    <!-- The rack of styles, under the wall: the collections (`src/ui/tabs.ts`),
+         then the chips (`src/ui/rail.ts`), then the premium plaque. The styles
+         sit below the poster rather than in a side column because choosing one
+         is a judgement about what is on the wall, and a strip of previews reads
+         left-to-right as alternatives to the thing directly above them. -->
     <div class="styles" id="styles">
       <div class="rail-h"><b>样式</b><span id="rail-info"></span></div>
+      <!-- One button per collection, drawn by `renderTabs`. Named in words,
+           because a tab is a word — unlike the chips below it. -->
+      <div class="tabs" id="tabs" role="group" aria-label="样式分类"></div>
       <!-- One chip per style, each a small render of the poster that style
            makes of the photograph in hand (see `src/ui/rail.ts`). -->
       <div class="rail" id="rail"></div>
       <!-- The premium plaque (spec §10): it names the pack when a template is
            premium *and* locked, and v1 ships nothing gated, so it is wired and
-           never shown. It belongs with the styles rather than in a side column:
-           what it names is the style that is on. It carries its own `hidden`
-           rather than being created on demand: the picker writes two properties
-           on an element that is always in the DOM, which is testable, where an
-           element that appears and disappears is only observable while it is
-           there. -->
+           never shown. It carries its own `hidden` rather than being created on
+           demand: the picker writes two properties on an element that is always
+           in the DOM, which is testable, where an element that appears and
+           disappears is only observable while it is there. -->
       <div class="plaque-row" id="plaque" hidden></div>
     </div>
   </main>
 
   <aside class="dock" id="dock">
     <!-- 保存 first: it is the action this whole screen exists for, and the top
-         right corner is where it is looked for. 存为模板 is the detour beside
-         it, in the secondary style — `.btn-primary`'s `flex: 1` gives the save
-         the larger half of the row. -->
+         right corner is where it is looked for. 存为模板 used to ride beside it
+         and now lives in the 画面 panel, with the numbers it actually keeps. -->
     <div class="acts">
+      <!-- The two arrows, in the dock's top row on a desk and in the top bar on
+           a phone (`#undo`/`#redo` there) — the same two controls in the two
+           arrangements, exactly as 保存 is. One handler each and one place that
+           decides whether they are live (`paintHistory`), so the pair on screen
+           cannot disagree with the pair that is not. -->
+      <div class="hist">
+        <button class="icon" id="undo-desk" type="button" title="撤销" aria-label="撤销">↺</button>
+        <button class="icon" id="redo-desk" type="button" title="重做" aria-label="重做">↻</button>
+      </div>
       <button class="btn btn-primary" id="save">保存</button>
-      <button class="btn" id="saveTpl">存为模板</button>
     </div>
 
-    <!-- 文字 — one input per slot the current template prints (see
-         `src/ui/fields.ts`). The row is built by the picker, not written here,
-         because which slots exist is a property of the template: 留白 has no
-         typography, and a field for a slot nothing draws is a control that
-         accepts typing and changes nothing. The whole block, heading included,
-         hides at zero fields — and it carries its own `[hidden]` rule in
-         `app.css` for the same reason `.plaque-row` does: the block sets its
-         own `display`, which would otherwise beat the UA's `[hidden]`. -->
-    <div class="fields" id="fields" hidden>
-      <div class="rail-h"><b>文字</b></div>
-      <div class="field-row" id="field-row"></div>
-    </div>
+    <!-- The panel switch (`src/ui/modes.ts`): which of 文字 and 画面 the screen is
+         showing. One at a time, because the two are questions about the same
+         poster and a phone has room for one answer. On a phone this row sits at
+         the foot of the stack with the open panel above it; on a desk it is the
+         top of the right column, under 保存. -->
+    <div class="modes" id="modes" role="group" aria-label="调整面板"></div>
 
-    <!-- 画面 — the mount's own geometry, one slider per number this template
-         can change (see `src/ui/controls.ts`). Same construction and the same
-         rule as 文字: the rows are the template's, not a fixed board, so 样张's
-         solid background gets no 后景 row rather than a slider that moves
-         nothing. The note beside the heading is 已调整, and `app.css` shows it
-         from `data-adjusted` alone. -->
-    <div class="controls" id="controls" data-adjusted="false">
-      <div class="rail-h"><b>画面</b><span class="ctl-note">已调整 · 存为模板可保留</span></div>
-      <div class="ctl-row" id="control-row"></div>
+    <div class="panels" id="panels" data-mode="frame">
+      <!-- 文字 — one input per slot the current template prints (see
+           `src/ui/fields.ts`). The row is built by the picker, not written here,
+           because which slots exist is a property of the template: 留白 has no
+           typography, and a field for a slot nothing draws is a control that
+           accepts typing and changes nothing. The whole block, heading included,
+           hides at zero fields — and it carries its own `[hidden]` rule in
+           `app.css` for the same reason `.plaque-row` does: the block sets its
+           own `display`, which would otherwise beat the UA's `[hidden]`. -->
+      <div class="fields" id="fields" hidden>
+        <div class="rail-h"><b>文字</b></div>
+        <div class="field-row" id="field-row"></div>
+      </div>
+
+      <!-- 画面 — the mount's own geometry, one slider per number this template
+           can change (see `src/ui/controls.ts`). Same construction and the same
+           rule as 文字: the rows are the template's, not a fixed board, so 样张's
+           solid background gets no 后景 row rather than a slider that moves
+           nothing.
+           Its two actions live in its heading, where the numbers they act on
+           are: 重置, which is the mount as authored — the gesture re-picking a
+           chip used to be, and no longer is, because picking the chip you are
+           on opens this panel — and 存为模板, which keeps these numbers under a
+           name. 已调整 is shown by `data-adjusted` alone. -->
+      <div class="controls" id="controls" data-adjusted="false">
+        <div class="rail-h">
+          <b>画面</b>
+          <span class="ctl-note">已调整</span>
+          <button class="btn btn-small" id="mount-reset" type="button" title="回到这个样式原本的数字">重置</button>
+          <button class="btn btn-small" id="saveTpl" type="button">存为模板</button>
+        </div>
+        <div class="ctl-row" id="control-row"></div>
+      </div>
     </div>
   </aside>
 </div>

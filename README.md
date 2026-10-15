@@ -24,14 +24,22 @@ blurred background) 后景放大/虚化/压暗 — and 存为模板 keeps the nu
 so a look you tuned is a style you can pick again. The sliders cannot be driven
 into a poster the renderer would crop: every maximum is the layout's own ceiling,
 computed in `src/core/limits.ts`. Nothing you change there is saved until you
-press 存为模板; the note beside the heading says 已调整 until you do, and picking
-the mount again is how the numbers as authored come back.
+press 存为模板; the note beside the heading says 已调整 until you do, and 重置
+beside it is how the numbers as authored come back.
 
 A refresh comes back to where you left off. The photographs, the one that was on
 the wall, the mount, the words and the numbers are all written as you work, so a
 stray ⌘R, a crash, or a phone that reclaims the tab costs nothing. The original
 files are stored, not a re-encode of them, so a restored photograph still knows
 its own EXIF.
+
+The screen is arranged the way an editor on a phone is: 保存 and the two arrows
+across the top, the poster in the middle with its own name and one line about
+what it does under it, the collections above the rack of styles, and a switch at
+the foot that shows 文字 or 画面 — one at a time. 撤销 and 重做 walk back through
+the mount, its numbers and the words; the photograph list is deliberately not in
+that history, because removing a photograph takes its bytes with it and a 撤销
+that offered to bring one back would be promising what the store no longer has.
 
 Photos never leave the device. There is no backend.
 
@@ -70,12 +78,20 @@ be served over HTTP — ES modules do not load from `file://`.
 
 ## Layout
 
-The shell is three columns in a grid: the photographs on the left, the wall with
-the rack of styles under it in the middle, and the actions and adjustments on the
-right, 保存 at its top. `tests/pixel/layout.spec.ts` asserts those relationships
-as geometry — left of, below, corner of — rather than as a screenshot, so they
-hold at any window size. On a phone the three stack (wall first) and each panel
-carves out its own height and scrolls.
+Two arrangements, one app. On a desk the shell is three columns in a grid: the
+photographs on the left, the wall with the rack of styles under it in the middle,
+and the actions and 画面 on the right — 保存 at the top of that column with the two
+arrows beside it, and the panel switch under it. On a phone the same things arrive
+as a stack: a bar across the top (照片 and its count, the arrows, 保存), the
+poster, its caption, the collections, the rack, then the switch at the foot with
+the open panel above it. The stack fits one screen (`height: 100dvh`, no page
+scroll), because a switch that has to be scrolled to is a switch nobody finds.
+The photograph list is the left column on a desk and a sheet behind the 照片
+button on a phone — with the bare wall carrying its own 添加照片, since a way in
+that lives behind a button is no way in for someone who has never used the app.
+
+`tests/pixel/layout.spec.ts` asserts those relationships as geometry — left of,
+below, corner of — rather than as a screenshot, so they hold at any window size.
 
 `src/core/` is framework-free and **never imports from `src/ui/`**. That
 boundary is what keeps the canvas math testable, and it is the one architectural
@@ -90,6 +106,9 @@ the rules live:
 | `src/ui/rail.ts` | `styleThumb` — the preview of a style | the rack of chips |
 | `src/ui/fields.ts` | — (the slots are the template's) | the 文字 inputs |
 | `src/ui/controls.ts` | `controlSpecs` / `setControl` / `settleTemplate` — the whole write path, clamped | the sliders |
+| `src/ui/tabs.ts` | `tabsFor` / `inTab` / `filterRail` — which styles a collection holds | the row of collection names |
+| `src/ui/modes.ts` | `modeFor` — which panel a template can show | the switch |
+| `src/ui/history.ts` | `remember` / `undo` / `redo` — the stack and the burst rule | the two arrows |
 
 That split is the reason `tests/unit/` can answer for the arithmetic (index
 shifts on deletion, slider ceilings, preview keys) in `node`, and why the browser
@@ -111,6 +130,55 @@ photographs and drags sliders would otherwise hold a bitmap for every combinatio
 it passed through. The words are **not** in a preview: they belong to the user
 rather than to the style, and re-rendering ten posters per keystroke would be the
 cost of a claim nobody made.
+
+## The spec plate
+
+The plate is the product's differentiator — the app reads what the camera wrote,
+so the user types nothing — and it is a caption rather than a row of values: the
+model's name on its own line, the exposure in smaller type under it, inset from
+the band's left wall. That is a camera's own watermark, and it is why
+`src/core/plate.ts` reads its fields as *data* (`plateValues`) rather than as a
+list of strings: where the line break goes is a decision about which field means
+what, and a list of values has already thrown that away.
+
+Two lines only when there is something for both. A photograph whose EXIF carries
+an exposure and no camera — what a phone upload usually looks like — draws one
+line, and a band too shallow to hold two (`head + 1.9·detail`) gets one line at
+the smaller size rather than two rows printed over each other and over the mat's
+edge. `tests/pixel/plate.spec.ts` pins all three, plus the original rule: no
+metadata, no plate, and never a blank band.
+
+## What the reference editor gave this app
+
+The arrangement — the bar across the top, the poster with its caption, the
+collections, the rack, and the switch at the foot that shows one panel at a time
+— comes from a camera app's own editor, which is where a poster is made on a
+phone and therefore a fair model for one made here. What did not come across is
+its *skin*: the palette, the rounded cards and the accent colour are that
+product's, and this app has its own (the design sheet's ink, beige and brass, in
+the two themes `tokens.css` defines).
+
+Three things in it were deliberately not taken:
+
+- **取消**, because there is nothing to cancel. This app is not a modal session —
+  a poster is saved by 保存 and a visit is left by leaving. The slot it would have
+  taken in the bar holds 照片 instead, which is where the photograph list has to
+  live when there is no column for it.
+- **The settings button in the middle of the selected card.** The gesture is real
+  here — pressing the chip that is on opens 画面, and the knob drawn in the middle
+  of that chip says so — but it is not a second control: a button inside the chip
+  would be a button inside a button, so the chip's own click is the control and
+  the knob is its mark.
+- **The brand mark** on the caption band, which is somebody's logo. The user's own
+  `sign` slot is the honest occupant of that corner, and no built-in declares one
+  yet (see below).
+
+`撤销` and `重做` are the one *feature* in the reference rather than a piece of
+layout, and the session record made them nearly free: a step is a snapshot of the
+same two blocks the record already holds — the mount and the words — and a burst
+of edits to one field is one step (700 ms, `COALESCE_MS`). The photograph list is
+not in the stack: removing a photograph drops its bytes, and offering to bring one
+back would be promising what the store no longer has.
 
 ## What this app stores, and where
 
@@ -202,7 +270,24 @@ that, and both are load-bearing:
   虚化 slider there would accept a drag and change nothing, which is the failure
   文字 already refuses for 留白.
 
+The panel's heading carries its two actions. 重置 puts the mount back to the
+numbers as authored — the gesture that used to be a second click on the chip
+already selected, which is now what opens this panel — and is live only while
+已调整 is showing. 存为模板 keeps them under a name. Both belong here rather than
+beside 保存, because they act on the numbers *in* the panel; that is also why 保存
+is alone in the dock's top row on a desk and alone in the bar on a phone.
+
 ## Known limitations
+
+**`?demo=1` no longer stores its photograph, and the copies it once did are still
+there.** The demo used to persist like any other photograph, so a reload of that
+URL restored the demo it had stored and then added a second one — the list grew
+by one per refresh, and a demo visit wrote a generated photograph into the user's
+own session. It is a sandbox now (see the dev affordances above). What that does
+not fix is the photographs it already stored: they come back on `/` until they
+are removed with the × on each row. They are not cleaned up on sight, on purpose
+— a stored photograph named `demo` is indistinguishable from a real file somebody
+named `demo`, and guessing wrong there deletes a photograph.
 
 **The list is capped where it persists, not where it lives.** Every photograph
 loaded is decoded and held in memory — 48 MB per 12 MP frame — for as long as its

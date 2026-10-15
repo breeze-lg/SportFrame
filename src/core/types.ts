@@ -55,6 +55,13 @@ export type Layout =
 export type Template = {
   id: string
   name: string
+  /** One line saying what this mount does to a photograph, in the app's own
+   *  words — the line under the poster. It is copy, not configuration: nothing
+   *  renders from it, and it is what turns a rack of nine pictures into nine
+   *  choices a first-time visitor can read. Optional because a record written
+   *  before it existed, and every copy 存为模板 makes of one, has no such field
+   *  and must keep validating. See `src/ui/rail.ts` for where it is shown. */
+  tagline?: string
   premium?: boolean
   layout: Layout
   canvas: { ratio: Ratio }

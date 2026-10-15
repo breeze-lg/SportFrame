@@ -1,4 +1,6 @@
 import type { Photo, Size, Template, TextSlotId } from '../core/types'
+import type { Mode } from './modes'
+import type { TabId } from './tabs'
 
 export type AppState = {
   /** Every photograph loaded this session, in the order they arrived. This list
@@ -18,6 +20,12 @@ export type AppState = {
   text: Partial<Record<TextSlotId, string>>
   size: Size
   longEdge: number
+  /** Which panel the dock is showing. A view, not a document: it is not in the
+   *  session record, and `modeFor` decides what it can be for the template in
+   *  hand. */
+  mode: Mode
+  /** Which collection the rack is filtered by. Also a view — see `mode`. */
+  tab: TabId
 }
 
 export function createState(initial: Partial<AppState> = {}): AppState {
@@ -33,6 +41,10 @@ export function createState(initial: Partial<AppState> = {}): AppState {
     // reader had two numbers for one canvas and only one of them was real.
     size: { W: 1152, H: 1440 },
     longEdge: 1440,
+    // 画面 rather than 文字: the mount is what a photograph is put in, it exists
+    // for every template, and it is the panel the reference editor opens on.
+    mode: 'frame',
+    tab: 'all',
     ...initial,
   }
 }

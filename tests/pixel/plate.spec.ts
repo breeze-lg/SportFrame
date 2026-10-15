@@ -29,7 +29,18 @@ test.beforeEach(async ({ page }) => {
   await page.waitForFunction(() => '__frame' in window)
 })
 
-const FULL = { focal: '140mm', aperture: 'f/2.1', shutter: '1/82', iso: 'ISO 500' }
+/**
+ * The camera and the four exposures — the shape 样张 is configured for, and the
+ * shape `plateLines` draws as two lines: the model above, the values under it.
+ * The camera value is the fixture file's own.
+ */
+const FULL = {
+  camera: 'NIKON CORPORATION NIKON D810',
+  focal: '140mm',
+  aperture: 'f/2.1',
+  shutter: '1/82',
+  iso: 'ISO 500',
+}
 
 test('plateFields produces a value per configured field, in order', async ({ page }) => {
   const out = await page.evaluate((exif) => {
@@ -109,6 +120,96 @@ test('the camera and date fields map through, in the configured order', async ({
     )
   })
   expect(out).toEqual(['2019.12.03', 'NIKON CORPORATION NIKON D810'])
+})
+
+// ---------------------------------------------------------------------------
+// The plate's shape: the camera above, the exposure under it
+// ---------------------------------------------------------------------------
+
+/**
+ * The line break is the plate's one piece of design, and it is a decision about
+ * which field means what — which is why `plateLines` takes the values as data
+ * (`plateValues`) rather than as a list of strings. Three of the four cases here
+ * are *not* the happy path: a photograph whose EXIF has no camera is what a
+ * phone upload produces, and a camera with nothing else is what a stripped file
+ * often keeps.
+ */
+test('plateLines puts the camera on its own line and the values under it', async ({ page }) => {
+  const out = await page.evaluate(() => {
+    const { plateLines } = (window as any).__frameCore
+    const plate = {
+      enabled: true,
+      fields: ['camera', 'focal', 'aperture', 'shutter', 'iso'],
+      color: '#000',
+      align: 'left',
+    }
+    return {
+      both: plateLines(plate, { camera: 'NIKON D810', focal: '140mm', aperture: 'f/2.1' }),
+      noCamera: plateLines(plate, { focal: '140mm', aperture: 'f/2.1' }),
+      onlyCamera: plateLines(plate, { camera: 'NIKON D810' }),
+      none: plateLines(plate, null),
+    }
+  })
+  expect(out.both).toEqual([['NIKON D810'], ['140mm', 'f/2.1']])
+  // No camera: the exposure on one line, in the configured order.
+  expect(out.noCamera).toEqual([['140mm', 'f/2.1']])
+  // A camera and nothing else: still one line. A headline with no detail under
+  // it is a value with nothing to say it is a headline, and an empty second line
+  // would be the blank band this file exists to never draw.
+  expect(out.onlyCamera).toEqual([['NIKON D810']])
+  // No metadata at all: nothing.
+  expect(out.none).toEqual([])
+})
+
+test('a band too shallow for two lines is drawn as one', async ({ page }) => {
+  // 样张's band is 150px, which is what the two-line layout needs. A template
+  // with a shallower one must get the single-line layout rather than two rows
+  // drawn over each other and over the mat's edge — the degradation, tested at
+  // the one size where the rule bites.
+  const out = await page.evaluate(() => {
+    const f = (window as any).__frame
+    const { drawPlate } = (window as any).__frameCore
+    f.setSize(400, 140)
+    const ctx = f.ctx()
+    const paint = (h: number) => {
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.clearRect(0, 0, 400, 140)
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, 400, 140)
+      drawPlate(
+        ctx,
+        { enabled: true, fields: ['camera', 'focal'], color: '#000', align: 'left' },
+        { camera: 'NIKON D810', focal: '140mm' },
+        { x: 0, y: 10, w: 400, h },
+        1,
+      )
+      const d = ctx.getImageData(0, 0, 400, 140).data
+      let count = 0
+      let minY = Infinity
+      let maxY = -Infinity
+      for (let y = 0; y < 140; y++) {
+        for (let x = 0; x < 400; x++) {
+          const i = (y * 400 + x) * 4
+          if (d[i]! < 120) {
+            count++
+            if (y < minY) minY = y
+            if (y > maxY) maxY = y
+          }
+        }
+      }
+      return { count, minY, maxY }
+    }
+    return { tall: paint(80), shallow: paint(16) }
+  })
+
+  expect(out.tall.count, 'the tall band drew nothing').toBeGreaterThan(0)
+  expect(out.tall.maxY - out.tall.minY, 'the tall band did not stack its two lines').toBeGreaterThan(20)
+
+  expect(out.shallow.count, 'the shallow band drew nothing').toBeGreaterThan(0)
+  expect(out.shallow.maxY - out.shallow.minY, 'the shallow band stacked two lines').toBeLessThan(15)
+  // and one line still sits inside the band it was given, not over its edge
+  expect(out.shallow.minY).toBeGreaterThanOrEqual(10)
+  expect(out.shallow.maxY).toBeLessThanOrEqual(26)
 })
 
 // ---------------------------------------------------------------------------
@@ -299,31 +400,36 @@ test.describe('the plate on the canvas', () => {
     expect(full.minX).toBeGreaterThanOrEqual(Math.round(band.x) - 2)
     expect(full.maxX).toBeLessThanOrEqual(Math.round(band.x + band.w) + 2)
 
-    // `align: 'center'` is 样张's setting. The tolerance is font rasterisation;
-    // a plate laid out from the band's left edge is ~150px off.
-    const inkCentre = (full.minX + full.maxX) / 2
-    expect(
-      Math.abs(inkCentre - (band.x + band.w / 2)),
-      `the plate is not centred: ink centre ${inkCentre}, band centre ${band.x + band.w / 2}`,
-    ).toBeLessThanOrEqual(6)
+    // `align: 'left'` is 样张's setting: a caption is read from its own left
+    // margin, so the ink starts a margin in from the band's left wall and runs
+    // right from there. This is the inverse of what used to be asserted here,
+    // and the displacement it defends against is the same one — a plate laid out
+    // from the canvas box rather than from the band it was handed drifts out of
+    // the mat's own walls — so the bound is what `drawPlate`'s margin can be,
+    // not a pixel.
+    const inset = full.minX - band.x
+    expect(inset, `the plate starts outside the band: ink at ${full.minX}, band at ${band.x}`).toBeGreaterThanOrEqual(20)
+    expect(inset, `the plate is not at its left margin: ${inset}px in`).toBeLessThanOrEqual(90)
 
-    // ...and centred on the *poster*, which the assertion above cannot say: it
-    // measures the ink against the band `bandFor` reconstructs from the same
-    // expression `render` builds its band with, so both sides move together.
-    // It passed while the band's `x` carried an extra `mat * k` and the plate
-    // sat 86px right of a 1152px canvas's centre. These two do not move with
-    // that expression — the canvas's centre is the box's, and the mat's centre
-    // is the frame's, because `matRect` grows the frame by `mat` on both sides
-    // — and the plate is the mat's bottom strip, so all three are one x.
+    // ...and it is *not* centred, on the band or on the poster. On 样张 the
+    // band's centre and the canvas's centre are one x — `matRect` grows the
+    // frame by the same `mat` on both sides — so a single displacement pins
+    // both, and a plate that drifted back to the middle is the defect here.
+    const inkCentre = (full.minX + full.maxX) / 2
     const centre = centresFor(1)
+    expect(centre.mat, 'the mat is no longer centred on the canvas').toBeCloseTo(centre.canvas, 0)
     expect(
       Math.abs(inkCentre - centre.canvas),
-      `the plate is not centred on the canvas: ink centre ${inkCentre}, canvas centre ${centre.canvas}`,
-    ).toBeLessThanOrEqual(6)
+      `the plate drifted back to the middle: ink centre ${inkCentre}, canvas centre ${centre.canvas}`,
+    ).toBeGreaterThan(80)
+
+    // Two lines: the camera above the exposure, which is a block taller than the
+    // one-line case below it. A plate that lost its `camera` line — the change
+    // `plateLines` exists to make — draws one row and fails here.
     expect(
-      Math.abs(inkCentre - centre.mat),
-      `the plate is not centred in the mat: ink centre ${inkCentre}, mat centre ${centre.mat}`,
-    ).toBeLessThanOrEqual(6)
+      full.maxY - full.minY,
+      'the plate drew one line: there is no camera line above the exposure',
+    ).toBeGreaterThan(partial.maxY - partial.minY)
 
     // no metadata at all: the band is untouched, which is the whole of RF-2
     expect(none.count, 'a photo with no EXIF drew a plate').toBe(0)

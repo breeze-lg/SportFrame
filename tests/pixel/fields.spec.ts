@@ -21,6 +21,16 @@ const LABEL: Record<string, string> = { title: '主标题', sub: '副标题', si
 const field = (page: Page, slot: string) => page.locator(`#fields .field[aria-label="${LABEL[slot]}"]`)
 const chip = (page: Page, name: string) => page.locator(`.print[aria-label="${name}"]`)
 
+/**
+ * Opens 文字. The two panels are one at a time now (`src/ui/modes.ts`), and the
+ * dock opens on 画面 because the mount is what a photograph is put in — so a test
+ * that types has to ask for the fields rather than find them lying open.
+ */
+async function words(page: Page): Promise<void> {
+  await page.locator('.mode', { hasText: '文字' }).click()
+  await expect(page.locator('#panels')).toHaveAttribute('data-mode', 'words')
+}
+
 async function loadPhoto(page: Page): Promise<void> {
   await page.setInputFiles('#file', {
     name: 'sample.webp',
@@ -92,6 +102,13 @@ test('the fields are exactly the slots the current template prints', async ({ pa
     // is the order the template draws its lines in.
     const unique = expected.filter((l, i) => expected.indexOf(l) === i)
 
+    // Re-opened each time round, not once before the loop: clicking the chip
+    // that is already on opens 画面 (the knob in the middle of that chip is the
+    // promise), so the mode has to be asked for again after every pick. 留白
+    // declares no slots at all, so its 文字 button is disabled and there is
+    // nothing to open — the block is hidden, which is what the loop asserts.
+    if (unique.length > 0) await words(page)
+
     await expect(page.locator('#fields .field')).toHaveCount(unique.length)
     expect(await page.locator('#fields .field').evaluateAll((els) =>
       els.map((e) => e.getAttribute('aria-label')),
@@ -106,6 +123,11 @@ test('typing puts the words on the poster, and clearing them puts the poster bac
   await loadPhoto(page)
   const bare = await digest(page)
 
+  // the field is in the DOM and not on screen: 画面 is the panel that is up, and
+  // the switch is what puts the other one there
+  await expect(field(page, 'title')).toBeHidden()
+  await words(page)
+  await expect(field(page, 'title')).toBeVisible()
   await field(page, 'title').fill('以梦为马')
   const withTitle = await digest(page)
   expect(withTitle, 'typing a title did not change the poster').not.toBe(bare)
@@ -122,6 +144,7 @@ test('the caret stays in the field while the wall follows the keystrokes', async
   await loadPhoto(page)
   const bare = await digest(page)
 
+  await words(page)
   const title = field(page, 'title')
   await title.click()
   await page.keyboard.type('以梦为马')
@@ -138,6 +161,7 @@ test('the caret stays in the field while the wall follows the keystrokes', async
 test('the words follow the user across templates, which choose typography and not copy', async ({ page }) => {
   await page.goto('/')
   await loadPhoto(page)
+  await words(page)
 
   await field(page, 'title').fill('以梦为马')
   await chip(page, '经典').click()
@@ -165,6 +189,7 @@ test('the words the user typed are in the exported file', async ({ page }) => {
   const silent = await ceremonyInk(page)
   await page.click('[data-act="done"]')
 
+  await words(page)
   await field(page, 'title').fill('以梦为马')
   await page.click('#save')
   await expect(page.locator('.ceremony')).toHaveCount(1)

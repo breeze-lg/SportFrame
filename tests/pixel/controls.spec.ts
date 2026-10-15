@@ -161,11 +161,14 @@ test('the 已调整 note appears on an edit and clears when the mount is re-pick
   await expect(page.locator('#controls')).toHaveAttribute('data-adjusted', 'true')
   await expect(page.locator('.ctl-note')).toBeVisible()
 
-  // Re-picking the mount you are on is how the numbers as authored come back —
-  // the one thing the note is warning about.
-  await chip(page, '经典').click()
+  // 重置, not a second click on the chip: that gesture is what opens this panel
+  // now (the knob in the middle of the chip that is on), so the way back to the
+  // numbers as authored is the button that says so.
+  await page.locator('#mount-reset').click()
   await expect(page.locator('#controls')).toHaveAttribute('data-adjusted', 'false')
   expect(await digest(page)).toBe(bare)
+  // ...and it goes dead again: there is nothing left to reset.
+  await expect(page.locator('#mount-reset')).toBeDisabled()
 })
 
 test('存为模板 keeps the numbers the sliders set', async ({ page }) => {

@@ -82,49 +82,102 @@ test('保存 is in the top right corner', async ({ page }) => {
   expect(save.y, '保存 is not at the top of the right column').toBeLessThan(dock.y + 80)
   expect(save.y, '保存 is not near the top of the screen').toBeLessThan(view.height * 0.15)
 
-  // and it is the primary action: 存为模板 is the secondary beside it
+  // and it is the primary action
   await expect(page.locator('#save')).toHaveClass(/btn-primary/)
+
+  // 存为模板 is not beside it any more: it lives with the numbers it keeps, in
+  // the 画面 panel's heading, which is also where 重置 is. Both are below 保存,
+  // in the same column — the panel and the save are one column of work.
   await expect(page.locator('#saveTpl')).not.toHaveClass(/btn-primary/)
-  const tpl = await box(page, '#saveTpl')
-  expect(tpl.y).toBeCloseTo(save.y, -1)
-  expect(tpl.x).toBeGreaterThan(save.x + save.width - 1)
+  for (const sel of ['#saveTpl', '#mount-reset']) {
+    const b = await box(page, sel)
+    expect(b.x, `${sel} left the right column`).toBeGreaterThanOrEqual(dock.x - 1)
+    expect(b.y, `${sel} is above 保存`).toBeGreaterThan(save.y)
+  }
 
   // the panels it serves are below it, still in the same column
-  for (const sel of ['#fields', '#controls']) {
+  for (const sel of ['#modes', '#panels']) {
     const b = await box(page, sel)
     expect(b.x, `${sel} left the right column`).toBeGreaterThanOrEqual(dock.x - 1)
     expect(b.y, `${sel} is above 保存`).toBeGreaterThan(save.y)
   }
 })
 
-test('on a phone the wall keeps the top and the panels scroll under it', async ({ page }) => {
+test('the poster is named under it, and the mount is a strip of collections', async ({ page }) => {
+  await page.goto('/')
+
+  // The caption is the poster's own margin: under the canvas, above the rack,
+  // in the middle column. This is the reference editor's title block — the one
+  // place the style that is on is legible in words.
+  const wall = await box(page, '.wall')
+  const cap = await box(page, '.poster-cap')
+  const styles = await box(page, '.styles')
+  expect(cap.y, 'the caption is not under the poster').toBeGreaterThanOrEqual(wall.y)
+  expect(cap.y, 'the caption is not above the rack').toBeLessThanOrEqual(styles.y + 1)
+  await expect(page.locator('#cap-name')).not.toBeEmpty()
+  await expect(page.locator('#cap-tag')).not.toBeEmpty()
+
+  // The collections sit above the chips, and one of them is on.
+  const tabs = await box(page, '.tabs')
+  const rail = await box(page, '.rail')
+  expect(tabs.y, 'the collections are not above the rack').toBeLessThan(rail.y)
+  await expect(page.locator('.tab.on')).toHaveCount(1)
+})
+
+test('on a phone the poster keeps the screen and the list is behind a button', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
 
+  // the bar, then the stack: poster → caption → collections → rack → switch
+  const bar = await box(page, '.topbar')
   const wall = await box(page, '.wall')
+  const cap = await box(page, '.poster-cap')
   const styles = await box(page, '.styles')
-  const photos = await box(page, '.photos')
   const dock = await box(page, '.dock')
 
-  // wall (with its rack) → photographs → adjustments
-  expect(styles.y).toBeGreaterThan(wall.y)
-  expect(photos.y, 'the photographs are not under the wall on a phone').toBeGreaterThan(
+  expect(wall.y).toBeGreaterThan(bar.y)
+  expect(cap.y).toBeGreaterThan(wall.y)
+  expect(styles.y).toBeGreaterThan(cap.y)
+  expect(dock.y, 'the adjustments are not the last block on a phone').toBeGreaterThan(
     styles.y + styles.height - 1,
   )
-  expect(dock.y, 'the adjustments are not the last column on a phone').toBeGreaterThan(
-    photos.y + photos.height - 1,
-  )
 
-  // The wall keeps the top of the screen rather than being squeezed by the two
-  // panels below it — the failure the caps exist to prevent.
+  // 保存 is in the bar, not in a dock row, and the panel switch is the last row
+  // on the screen — the reference's capsule at the foot.
+  await expect(page.locator('#save-top')).toBeVisible()
+  await expect(page.locator('.acts')).toBeHidden()
+  const modes = await box(page, '.modes')
+  expect(modes.y + modes.height).toBeLessThanOrEqual(844)
+  expect(modes.y).toBeGreaterThan(dock.y)
+
+  // The page itself does not scroll: the poster is what the screen is for, and a
+  // stack that grew would put the switch that changes the mount below the fold.
+  const scrolls = await page.evaluate(
+    () => document.documentElement.scrollHeight > window.innerHeight + 2,
+  )
+  expect(scrolls, 'the phone layout scrolls the page').toBe(false)
   expect(wall.height, 'the wall lost the top of the screen').toBeGreaterThan(844 * 0.3)
 
-  // Each capped panel scrolls instead of growing: its content is taller than
-  // the box it was given.
-  for (const sel of ['.photos', '.dock']) {
-    const scrolls = await page
-      .locator(sel)
-      .evaluate((el) => el.scrollHeight > el.clientHeight || el.clientHeight < 844 * 0.65)
-    expect(scrolls, `${sel} is not capped`).toBe(true)
-  }
+  // 照片 is a sheet behind the bar's button rather than a column, and the bare
+  // wall carries its own way in for a first visit — a way in that lives behind a
+  // button is no way in at all for someone who has never used the app.
+  await expect(page.locator('#wall-empty')).toBeVisible()
+  await expect(page.locator('#add-photo')).toBeVisible()
+  await expect(page.locator('#photos')).toBeHidden()
+  await page.locator('#photos-open').click()
+  await expect(page.locator('#photos')).toBeVisible()
+  await expect(page.locator('.photos #drop')).toHaveCount(1)
+  await expect(page.locator('.photos #file')).toHaveCount(1)
+  await expect(page.locator('#photos-open')).toHaveAttribute('aria-expanded', 'true')
+  // ...and it closes from inside itself, because the sheet covers the button
+  // that opened it — plus by tapping away.
+  await expect(page.locator('#scrim')).toBeVisible()
+  // to the right of the sheet, which is where the poster behind it is: the
+  // scrim covers the whole viewport, so the middle of it is inside the sheet
+  await page.locator('#scrim').click({ position: { x: 360, y: 300 } })
+  await expect(page.locator('#photos')).toBeHidden()
+  await page.locator('#photos-open').click()
+  await page.locator('#photos-close').click()
+  await expect(page.locator('#photos')).toBeHidden()
+  await expect(page.locator('#photos-open')).toHaveAttribute('aria-expanded', 'false')
 })

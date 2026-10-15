@@ -2,8 +2,12 @@ import { test, expect } from '@playwright/test'
 
 test('the dock offers exactly one primary action', async ({ page }) => {
   await page.goto('/')
-  await expect(page.locator('.btn-primary')).toHaveCount(1)
-  await expect(page.locator('.btn-primary')).toHaveText('保存')
+  // On screen, not in the DOM: 保存 is drawn twice — the dock's, which is the
+  // one on a desk, and the top bar's, which is the one on a phone — and exactly
+  // one of them is ever visible (see `app.css`). Two primary actions a user can
+  // see would be two answers to \"what does this screen do\".
+  await expect(page.locator('.btn-primary:visible')).toHaveCount(1)
+  await expect(page.locator('.btn-primary:visible')).toHaveText('保存')
 })
 
 /**

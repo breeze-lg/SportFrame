@@ -19,7 +19,8 @@ body {
    ceremony that dimmed two of the three would leave the third live. */
 body.ceremony-open .photos,
 body.ceremony-open .styles,
-body.ceremony-open .dock { opacity: 0; pointer-events: none; visibility: hidden; }
+body.ceremony-open .dock,
+body.ceremony-open .topbar { opacity: 0; pointer-events: none; visibility: hidden; }
 .ceremony {
   position: fixed;
   inset: 0;
@@ -89,11 +90,27 @@ body.ceremony-open .dock { opacity: 0; pointer-events: none; visibility: hidden;
 .wall {
   flex: 1;
   min-height: 0;
+  /* A column, so the poster and the caption under it are one stack: the caption
+     is part of the wall's composition, not a row of chrome beside it (see
+     `.poster-cap`). */
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   position: relative;
   background-image: linear-gradient(180deg, var(--wall-hi), var(--wall) 46%, var(--wall-lo));
+}
+/* The pane the poster is fitted into: it takes every pixel the caption does not,
+   which is what keeps `canvas#cv`'s 92% a share of the space actually left for
+   it rather than of the wall including the caption. */
+.wall-pane {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
 }
 canvas#cv { max-width: 92%; max-height: 92%; box-shadow: var(--deep); border-radius: 2px; }
 /* Until something is drawn on it, `#cv` is a transparent 300×150 box, and
@@ -414,7 +431,10 @@ canvas#cv:not([width]) { visibility: hidden; }
 .drop:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 /* the × is inside the chip, so its outline goes in rather than out */
 .del:focus-visible { outline-offset: -3px; }
-.acts { display: flex; }
+.acts { display: flex; align-items: center; gap: 6px; }
+/* ...but in the dock's row the arrows keep their own place at the left edge
+   rather than being centred by the `margin: 0 auto` the phone bar needs. */
+.acts .hist { margin: 0; }
 .btn {
   font-family: var(--sans);
   font-size: 14px;
@@ -450,6 +470,159 @@ canvas#cv:not([width]) { visibility: hidden; }
 }
 .toast.show { opacity: 1; }
 
+/* ---------------------------------------------------------------------------
+   The chrome the reference editor gave this app: a bar across the top on a
+   phone, the poster's own caption under it, the collections above the rack, and
+   the switch that shows one panel at a time.
+
+   What is taken from that editor is the arrangement — where things sit, and in
+   what order a poster is made. What is not taken is its skin: the palette,
+   the squared corners, the hairlines and the single action colour are this
+   app's own, out of the design sheet, and nothing here borrows another
+   product's marks.
+--------------------------------------------------------------------------- */
+
+/* 顶栏 — the phone's bar: 照片 (with the list's count), the two arrows, 保存.
+   `display: none` until the breakpoint, where those three things live in the
+   columns themselves instead. */
+.topbar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--bevel);
+  background: var(--surface);
+}
+.topbar .btn-primary { flex: none; padding: 9px 20px; }
+.btn-quiet { padding: 9px 12px; font-size: 13px; color: var(--body); }
+.btn-quiet span { font-family: var(--mono); font-size: 10.5px; color: var(--quiet); }
+/* The arrows are centred by taking the free space on both sides, which is what
+   puts them in the middle of the bar whatever the two buttons beside them
+   measure. */
+.hist { display: flex; gap: 2px; margin: 0 auto; }
+.icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: none;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+/* An arrow that cannot go anywhere is grey rather than gone: it is the answer to
+   "can I undo this", and a control that vanishes answers nothing. */
+.icon:disabled { color: var(--faint); cursor: default; }
+.icon:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* 海报的落款 — the mount, named, in the poster's own margin. The reference
+   editor's title block, and the one place the current style is legible in words
+   rather than as a picture of a picture. */
+.poster-cap {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 16px 16px;
+  text-align: center;
+}
+/* The block sets its own `display`, so it needs its own `[hidden]` rule for the
+   reason `.plaque-row` and `.fields` do. */
+.poster-cap[hidden] { display: none; }
+.poster-cap b { font-family: var(--serif); font-weight: 400; font-size: 19px; color: var(--ink); }
+.poster-cap span { font-size: 12.5px; color: var(--quiet); }
+
+/* The sheet's own controls. Both are drawn only under the breakpoint: on a desk
+   the list is a column with no sheet-ness to dismiss. */
+.sheet-x { display: none; }
+.scrim { display: none; }
+
+/* The bare wall's way in. Drawn only under the breakpoint: on a desk the drop
+   zone is a column away and in sight, and a second one on the wall would be two
+   doors to the same room. */
+.wall-empty { display: none; }
+
+/* 分类 — the collections above the rack (`src/ui/tabs.ts`). Words, because a tab
+   *is* a word; the underline is the same hairline the rest of the strip uses. */
+.tabs { display: flex; gap: 14px; overflow-x: auto; }
+.tab {
+  flex: none;
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: none;
+  color: var(--quiet);
+  font-family: var(--sans);
+  font-size: 13px;
+  cursor: pointer;
+}
+.tab.on { color: var(--ink); border-bottom-color: var(--ink); }
+.tab:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* 面板开关 — 文字 / 画面, one at a time (`src/ui/modes.ts`). The panel that is
+   not up is hidden by `data-mode` on the container, so the two are siblings in
+   the DOM and the stylesheet decides which one is on screen. */
+.modes { display: flex; gap: 6px; }
+.mode {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--bevel);
+  border-radius: 2px;
+  background: var(--surface);
+  color: var(--quiet);
+  font-family: var(--sans);
+  font-size: 13px;
+  cursor: pointer;
+}
+.mode.on { border-color: var(--ink); color: var(--ink); box-shadow: var(--lift); }
+.mode:disabled { color: var(--faint); cursor: default; }
+.mode:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.panels { display: flex; flex-direction: column; gap: 12px; }
+.panels[data-mode='words'] .controls { display: none; }
+.panels[data-mode='frame'] .fields { display: none; }
+
+/* The panel heading's two actions, at its right edge: 重置 (the mount as
+   authored) and 存为模板 (these numbers under a name). `margin-left: auto`
+   rather than `space-between` on the heading, because the note between them is
+   `visibility`-hidden and a heading that re-spread on every edit would move the
+   buttons out from under the pointer. */
+.btn-small { padding: 4px 9px; font-size: 12px; }
+.controls .rail-h { justify-content: flex-start; gap: 8px; }
+#mount-reset { margin-left: auto; }
+#mount-reset:disabled { color: var(--faint); cursor: default; }
+
+/* 已调整 的圆点 — the mark in the middle of the chip that is on. The reference
+   editor draws a button there, and the gesture is real here too (picking the
+   mount you are already on opens 画面), but a control inside the chip would be a
+   button inside a button: the chip's own click is the control and this is its
+   mark. Surface disc, ink glyph — the same two materials every other mark in
+   this app is made of, and legible over any photograph. */
+.print .knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--bevel);
+  box-shadow: var(--lift);
+}
+.print .knob::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  background-color: var(--ink);
+  /* two tracks, two thumbs — the 画面 panel in miniature */
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cg fill='%23000'%3E%3Cpath d='M1 4.3h14v1.4H1z'/%3E%3Cpath d='M1 10.3h14v1.4H1z'/%3E%3Ccircle cx='5.2' cy='5' r='2.6'/%3E%3Ccircle cx='10.8' cy='11' r='2.6'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cg fill='%23000'%3E%3Cpath d='M1 4.3h14v1.4H1z'/%3E%3Cpath d='M1 10.3h14v1.4H1z'/%3E%3Ccircle cx='5.2' cy='5' r='2.6'/%3E%3Ccircle cx='10.8' cy='11' r='2.6'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+}
+
 @media (min-width: 901px) {
   /* The rack wraps on a desk, and is centred. Both are the same decision: the
      stage here is wide enough to hold every style, and a style hidden behind a
@@ -471,43 +644,98 @@ canvas#cv:not([width]) { visibility: hidden; }
    the wall off the screen — the page grows and scrolls, and nothing gets
    squeezed. */
 @media (max-width: 900px) {
+  /* One screen, like the editor this arrangement comes from: the poster keeps
+     the middle, the panel at the foot scrolls inside itself, and the page does
+     not scroll at all. A stack that grew would put the switch that changes the
+     mount below the fold, which is the one control a phone cannot afford to
+     hide. */
   .app {
     grid-template-columns: minmax(0, 1fr);
-    height: auto;
-    min-height: 100vh;
-    min-height: 100dvh;
+    grid-template-rows: minmax(0, 1fr);
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
   }
-  body { height: auto; min-height: 100%; }
-  .stage { order: 1; min-height: 58vh; min-height: 58dvh; }
+  body { height: 100%; overflow: hidden; }
+  .stage { order: 1; min-height: 0; }
+
+  /* 顶栏 — the phone's own bar, and the top of the stack: 照片, the two arrows,
+     保存. Above this width the same three things are in the columns themselves
+     (the list is the left column, 保存 is the top of the right one), so this is
+     the same app in the arrangement a small screen has room for. */
+  .topbar { display: flex; }
+
+  /* 照片 — a sheet. The reference's stack has no column to spare and the poster
+     is what the screen is for, so the list slides over it on demand. The empty
+     state gets its own way in on the wall (`.wall-empty`), because a way in that
+     lives behind a button is no way in for a first-time visitor. */
   .photos {
-    order: 2;
-    max-height: 30vh;
-    max-height: 30dvh;
-    border-right: 0;
-    border-top: 1px solid var(--bevel);
+    position: fixed;
+    z-index: 40;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(320px, 86vw);
+    height: 100dvh;
+    max-height: none;
+    border-right: 1px solid var(--bevel);
+    border-top: 0;
+    box-shadow: var(--deep);
+    display: none;
   }
+  body.photos-open .photos { display: flex; }
+  /* ...and the way out of it: the sheet's own ×, and tapping the poster behind
+     it. One way out, behind the thing it dismisses, is a trap. */
+  .sheet-x {
+    display: block;
+    margin-left: auto;
+    padding: 0 4px;
+    border: 0;
+    background: none;
+    color: var(--quiet);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  body.photos-open .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: rgba(0, 0, 0, .35);
+  }
+
+  /* the bare wall's own way in */
+  .wall-empty:not([hidden]) { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .wall-empty p { margin: 0; font-size: 13px; color: var(--quiet); }
+
+  /* 调整 — the dock is the foot of the stack, and 保存 is not in it: it is in
+     the bar. The panel sits above the switch, so the switch is the last row on
+     the screen — the reference's capsule at the foot — and it closes the panel
+     again rather than staying open over the poster. */
+  .acts { display: none; }
   .dock {
     order: 3;
-    max-height: 60vh;
-    max-height: 60dvh;
+    flex: none;
+    max-height: 46vh;
+    max-height: 46dvh;
     border-left: 0;
     border-top: 1px solid var(--bevel);
   }
+  .panels { order: 1; }
+  .modes {
+    order: 2;
+    position: sticky;
+    bottom: 0;
+    padding: 8px 0 2px;
+    background: var(--surface);
+  }
+  body[data-panel='closed'] .panels { display: none; }
   /* `flex: none` on the rows is what makes those caps a scroll rather than a
      squeeze — a capped flex column shrinks its children to fit, and the rail is
      the one row that shrinks all the way: its own `overflow-x` gives it an
      automatic minimum height of zero, so nine 62px prints collapse into a 2px
      line and the picker disappears. */
   .dock > * { flex: none; }
-  /* The one action that must never be behind a scroll keeps its own footing at
-     the bottom of the scrollport: 保存 is the screen's whole purpose. The
-     opaque background is the dock's own, so the rows scrolling under it are
-     covered rather than showing through. */
-  .acts {
-    position: sticky;
-    bottom: 0;
-    background: var(--surface);
-    padding-top: 8px;
-    padding-bottom: 2px;
-  }
 }

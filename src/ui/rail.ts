@@ -152,7 +152,9 @@ export function renderRail(
     if (t.premium) b.classList.add('brass')
     if (saved) b.classList.add('custom')
     b.type = 'button'
-    b.title = t.name
+    // The chip that is on says so in words too, because its click does something
+    // else from every other chip's — see the knob below.
+    b.title = t.id === activeId ? `${t.name}（已在墙上，点击打开画面）` : t.name
     // The print itself. Inline rather than a class, because the image is the
     // user's photograph rendered through this template and a stylesheet cannot
     // know its URL; `--surface` behind it stays the chip's colour until a
@@ -173,6 +175,22 @@ export function renderRail(
     b.setAttribute('aria-label', t.name)
     b.setAttribute('aria-pressed', t.id === activeId ? 'true' : 'false')
     b.addEventListener('click', () => onPick(t.id))
+
+    // The knob: the mark in the middle of the chip that is on.
+    //
+    // The reference editor draws a settings button there, and the gesture is
+    // real here as well — picking the mount you are already on opens 画面, which
+    // is where its numbers are. What it is *not* is a button: a control inside
+    // the chip would be a button in a button, so the chip's own click is the
+    // control and this is its mark. `aria-hidden`, because the chip has already
+    // said everything about itself to assistive tech.
+    if (t.id === activeId) {
+      const knob = document.createElement('span')
+      knob.className = 'knob'
+      knob.setAttribute('aria-hidden', 'true')
+      b.appendChild(knob)
+    }
+
     mount.appendChild(b)
 
     // The × is drawn for a template the user saved and for nothing else: the

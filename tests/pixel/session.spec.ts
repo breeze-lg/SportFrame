@@ -57,21 +57,36 @@ async function digest(page: Page): Promise<number> {
 
 /** How many photographs the byte store is holding. The number the *record* keeps
  *  is not evidence: the point of removing a photograph is that its bytes go.
- *  A database that was never created answers zero — nothing is stored, which is
- *  what the caller is asking — and only an error answers -1. */
+ *
+ *  `databases()` first, and deliberately not `open()`: opening a database that
+ *  does not exist *creates* it, and a store-less database created by a test
+ *  leaves the app's own `open` unable to run the upgrade that creates the store
+ *  — which is how an earlier version of this helper made the app silently unable
+ *  to store anything, and turned the test below into a comparison of two zeros.
+ *  A database that was never created answers zero, which is what the caller is
+ *  asking; only an error answers -1. */
 async function storedBytes(page: Page): Promise<number> {
   return page.evaluate(
     () =>
       new Promise<number>((resolve) => {
-        const request = indexedDB.open('frame-app-photos')
-        request.onsuccess = () => {
-          const db = request.result
-          if (!db.objectStoreNames.contains('photos')) return resolve(0)
-          const got = db.transaction('photos', 'readonly').objectStore('photos').count()
-          got.onsuccess = () => resolve(got.result)
-          got.onerror = () => resolve(-1)
+        const factory = indexedDB as IDBFactory & { databases?: () => Promise<{ name?: string }[]> }
+        const names = typeof factory.databases === 'function' ? factory.databases() : null
+        const proceed = () => {
+          const request = indexedDB.open('frame-app-photos')
+          request.onsuccess = () => {
+            const db = request.result
+            if (!db.objectStoreNames.contains('photos')) return resolve(0)
+            const got = db.transaction('photos', 'readonly').objectStore('photos').count()
+            got.onsuccess = () => resolve(got.result)
+            got.onerror = () => resolve(-1)
+          }
+          request.onerror = () => resolve(-1)
         }
-        request.onerror = () => resolve(-1)
+        if (!names) return proceed()
+        names.then(
+          (list) => (list.some((d) => d.name === 'frame-app-photos') ? proceed() : resolve(0)),
+          () => resolve(-1),
+        )
       }),
   )
 }
@@ -84,7 +99,12 @@ test('a refresh comes back where it was', async ({ page }) => {
   // the wall, which mount, what words, what numbers
   await row(page, 'camera').click()
   await chip(page, '拍立得').click()
+  // 文字 is the panel the typing is in, and the dock opens on 画面 (the mount)
+  await page.locator('.mode', { hasText: '文字' }).click()
   await field(page, '主标题').fill('回来了')
+  // ...and back to 画面 for the numbers: one panel at a time means the other one
+  // is off screen, which is the point of the switch.
+  await page.locator('.mode', { hasText: '画面' }).click()
   await slider(page, '前景大小').fill('52')
   await expect(count(page)).toHaveText('2 / 2')
   await expect(readout(page, 'scale')).toHaveText('52%')

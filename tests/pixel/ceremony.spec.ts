@@ -58,9 +58,12 @@ test('the ceremony hides the chrome and states the dimensions', async ({ page })
   await expect(page.locator('body')).not.toHaveClass(/ceremony-open/)
   await expect(page.locator('.dock')).toHaveCSS('visibility', 'visible')
 
-  // every column is reachable again, not left stolen from the keyboard
+  // every column is reachable again, not left stolen from the keyboard.
+  //
+  // 26 presses and not 12: the collections row above the rack added four stops
+  // before the chips, so the dock sits further along the tab order than it did.
   const seen = new Set<string>()
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 26; i++) {
     await page.keyboard.press('Tab')
     seen.add(await focusedColumn())
   }

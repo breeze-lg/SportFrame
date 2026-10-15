@@ -25,6 +25,12 @@ export function validateTemplate(t: unknown): Validation {
 
   if (typeof o.id !== 'string' || !o.id) return { ok: false, error: 'missing id' }
   if (typeof o.name !== 'string' || !o.name) return { ok: false, error: 'missing name' }
+  // optional: absent is fine, but a number in a copy's line is a `[object
+  // Object]` under the poster rather than a sentence, so a present one has to
+  // be a string
+  if (o.tagline !== undefined && typeof o.tagline !== 'string') {
+    return { ok: false, error: 'tagline must be a string' }
+  }
   // optional: absent is fine, but `'no'` and `0` are not booleans and both
   // read the wrong way round at the entitlement gate
   if (o.premium !== undefined && typeof o.premium !== 'boolean') {
@@ -117,6 +123,7 @@ export const TEMPLATES: Template[] = [
   {
     id: 'classic',
     name: '经典',
+    tagline: '照片压在虚化的自己上，四周收一圈白',
     layout: { kind: 'single' },
     canvas: { ratio: '4:5' },
     background: { mode: 'blur', blur: 28, darken: 30, zoom: 118 },
@@ -132,6 +139,7 @@ export const TEMPLATES: Template[] = [
   {
     id: 'polaroid',
     name: '拍立得',
+    tagline: '厚下边，一次成像的即时感',
     layout: { kind: 'single' },
     canvas: { ratio: '4:5' },
     background: { mode: 'blur', blur: 36, darken: 14, zoom: 134 },
@@ -141,6 +149,7 @@ export const TEMPLATES: Template[] = [
   {
     id: 'magazine',
     name: '杂志封面',
+    tagline: '顶上一个大标题，封面感',
     layout: { kind: 'single' },
     canvas: { ratio: '4:5' },
     background: { mode: 'blur', blur: 46, darken: 54, zoom: 130 },
@@ -156,6 +165,7 @@ export const TEMPLATES: Template[] = [
   {
     id: 'cinema',
     name: '电影感',
+    tagline: '16:9 宽银幕，底子压暗',
     layout: { kind: 'single' },
     canvas: { ratio: '16:9' },
     background: { mode: 'blur', blur: 62, darken: 64, zoom: 148 },
@@ -168,6 +178,7 @@ export const TEMPLATES: Template[] = [
   {
     id: 'postcard',
     name: '明信片',
+    tagline: '3:2 横构图，下面一条白边写一句',
     layout: { kind: 'single' },
     canvas: { ratio: '3:2' },
     background: { mode: 'blur', blur: 40, darken: 12, zoom: 126 },
@@ -177,6 +188,7 @@ export const TEMPLATES: Template[] = [
   {
     id: 'minimal',
     name: '留白',
+    tagline: '圆角相纸，一个字也不写',
     layout: { kind: 'single' },
     canvas: { ratio: '1:1' },
     background: { mode: 'blur', blur: 48, darken: 6, zoom: 126 },
@@ -185,6 +197,7 @@ export const TEMPLATES: Template[] = [
   {
     id: 'square',
     name: '社媒方形',
+    tagline: '方幅，铺满信息流',
     layout: { kind: 'single' },
     canvas: { ratio: '1:1' },
     background: { mode: 'blur', blur: 30, darken: 32, zoom: 120 },
@@ -197,6 +210,7 @@ export const TEMPLATES: Template[] = [
   {
     id: 'story',
     name: '竖版故事',
+    tagline: '9:16 竖屏，标题压在画面底',
     layout: { kind: 'single' },
     canvas: { ratio: '9:16' },
     background: { mode: 'blur', blur: 34, darken: 36, zoom: 132 },
@@ -209,6 +223,7 @@ export const TEMPLATES: Template[] = [
   {
     id: 'spec-sheet',
     name: '样张',
+    tagline: '白卡纸，相机参数印在下面',
     premium: true,
     layout: { kind: 'single' },
     canvas: { ratio: '4:5' },
@@ -224,9 +239,17 @@ export const TEMPLATES: Template[] = [
     text: { anchor: 'mat', slots: [{ id: 'title', size: 24, weight: 400, color: '#1C1B18' }] },
     plate: {
       enabled: true,
-      fields: ['focal', 'aperture', 'shutter', 'iso'],
+      // The camera first, then the exposure: `drawPlate` puts the one field
+      // that is a name on its own line above the values, which is the shape a
+      // camera's own watermark uses and the reason this list is not in the
+      // order the numbers are read in. `camera` is 样张's only chance to print
+      // it — the other eight templates carry no plate at all.
+      fields: ['camera', 'focal', 'aperture', 'shutter', 'iso'],
       color: '#3A3833',
-      align: 'center',
+      // Left, not centre: the spec plate is a caption, and a caption is read
+      // from its own left margin. Centring it also made the band unavailable
+      // for anything else (see `drawPlate`).
+      align: 'left',
     },
   },
 ]

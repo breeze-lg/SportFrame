@@ -217,7 +217,7 @@ export function makeRoom(
 /* the bytes                                                                   */
 /* -------------------------------------------------------------------------- */
 
-function open(): Promise<IDBDatabase | null> {
+function open(version: number = DB_VERSION, retried = false): Promise<IDBDatabase | null> {
   return new Promise((resolve) => {
     // The whole of it, `typeof` included: reading the property itself throws
     // where IndexedDB is refused (private mode on some WebKit builds), and a
@@ -225,12 +225,30 @@ function open(): Promise<IDBDatabase | null> {
     // the middle of a boot. Nothing about storing a photograph is worth that.
     try {
       if (typeof indexedDB === 'undefined') return resolve(null)
-      const request = indexedDB.open(DB, DB_VERSION)
+      const request = indexedDB.open(DB, version)
       request.onupgradeneeded = () => {
         const db = request.result
         if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'key' })
       }
-      request.onsuccess = () => resolve(request.result)
+      request.onsuccess = () => {
+        const db = request.result
+        // A database that exists *without* this store is one somebody else
+        // created: another tab of an older build, or anything that opened the
+        // name before this app did. Opening at the version already on disk does
+        // not run `onupgradeneeded`, so the store would never appear and every
+        // write would fail on a missing object store — silently, since a failed
+        // write is already a session that forgets. Asking for one version more
+        // is what triggers the upgrade the store needs. Once: a store still
+        // missing after that is not something this code can fix, and retrying
+        // forever would be an infinite upgrade loop.
+        if (!db.objectStoreNames.contains(STORE) && !retried) {
+          const bump = db.version + 1
+          db.close()
+          resolve(open(bump, true))
+          return
+        }
+        resolve(db)
+      }
       // A refused or blocked database is a session that does not persist. There
       // is nothing to tell the user: the app works, it just forgets.
       request.onerror = () => resolve(null)

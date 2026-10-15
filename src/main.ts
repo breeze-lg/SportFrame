@@ -4,11 +4,22 @@ import { TEMPLATES, getTemplate } from './core/templates'
 import { drawMat, roundedRect } from './core/mat'
 import { drawBackground } from './core/background'
 import { drawText, measureToFit, frameFont } from './core/text'
-import { drawPlate, plateFields } from './core/plate'
+import { drawPlate, plateFields, plateLines } from './core/plate'
 import { initTheme } from './ui/theme'
 import { createState } from './ui/state'
 import { toast } from './ui/toast'
 import { renderRail, styleThumb } from './ui/rail'
+import { filterRail, renderTabs, tabsFor, type TabId } from './ui/tabs'
+import { modeFor, renderModes, type Mode } from './ui/modes'
+import {
+  canRedo,
+  canUndo,
+  newHistory,
+  redo,
+  remember,
+  undo,
+  type Draft,
+} from './ui/history'
 import { renderFields } from './ui/fields'
 import {
   activePhoto,
@@ -225,27 +236,106 @@ function persistSession(): void {
  * moments: a new photograph, a new pick, a save, a delete. A rail that showed
  * the style before last, or the photograph before last, is the same defect as a
  * chip that says nothing.
+ *
+ * The plate's own line and the poster's caption are painted here for the same
+ * reason: they are both readings of the mount that is on, and every one of them
+ * moves when it moves.
  */
 function paintRail(activeId: string | null): void {
   const saved = savedTemplates()
+  const customIds = new Set(saved.map((t) => t.id))
+  const all = [...TEMPLATES, ...saved]
+
+  // A tab can empty itself: 我的 disappears with the last saved template, and a
+  // selection left pointing at it would be a rack with nothing on it and no
+  // word about why. 全部 is the answer that always has something in it.
+  const tabs = tabsFor(saved.length)
+  if (!tabs.includes(state.tab)) state.tab = 'all'
+
   renderRail(
     rail,
-    [...TEMPLATES, ...saved],
+    filterRail(all, state.tab, customIds),
     activeId,
     pick,
-    new Set(saved.map((t) => t.id)),
+    customIds,
     removeSaved,
     (t) => styleThumb(t, activePhoto(state), state.longEdge),
   )
+  renderTabs(tabsEl, tabs, state.tab, onTab)
+
+  const t = state.template
   const info = document.getElementById('rail-info')
   if (info) {
-    const t = state.template
     // The poster's own size, not the file's: `state.size` is the 1× canvas and
     // the export doubles it, so a readout in export pixels would state a number
     // that appears nowhere on screen.
     const size = t ? canvasSize(t) : null
     info.textContent = t && size ? `${t.name} · ${size.W}×${size.H}` : ''
   }
+
+  // The caption under the poster: which mount is on, and the line the template
+  // carries saying what it does to a photograph. A style with no tagline — a
+  // copy saved before the field existed, or one of the user's own — says its
+  // name and stops, rather than borrowing a sentence from something else.
+  capName.textContent = t?.name ?? ''
+  capTag.textContent = t?.tagline ?? ''
+  posterCap.hidden = !t
+}
+
+/** The collections row. A tab changes what the rack shows and nothing else:
+ *  the wall, the words and the numbers are all still the same poster. */
+function onTab(tab: TabId): void {
+  if (tab === state.tab) return
+  state.tab = tab
+  paintRail(state.template?.id ?? null)
+}
+
+/**
+ * 文字 / 画面 — one panel at a time (see `src/ui/modes.ts`).
+ *
+ * `canWords` is the same test `fields.ts` makes before it builds a row, and it
+ * is asked here rather than passed in so the two cannot disagree: a 文字 mode
+ * offered for 留白 would open a panel with nothing in it.
+ */
+function canWords(): boolean {
+  return (state.template?.text?.slots?.length ?? 0) > 0
+}
+
+function paintPanels(): void {
+  state.mode = modeFor(state.mode, canWords())
+  panels.dataset.mode = state.mode
+  // The phone's sheet, opened and closed by the modes row. On a desk the
+  // attribute is written and ignored: there is room for the panel in the
+  // column, and a panel that had to be summoned would be a step backwards.
+  document.body.dataset.panel = panelOpen ? 'open' : 'closed'
+}
+
+function paintModes(): void {
+  const words = canWords()
+  renderModes(modesEl, modeFor(state.mode, words), words, onMode)
+  paintPanels()
+}
+
+/** A mode button: opens its panel, or closes the sheet if it is the one already
+ *  open. On a desk the second press is a no-op a user cannot observe. */
+function onMode(mode: Mode): void {
+  if (mode === state.mode && panelOpen) {
+    panelOpen = false
+    paintPanels()
+    return
+  }
+  openMode(mode)
+}
+
+/**
+ * Opens a panel by name — what a mode button does, and what picking the mount
+ * already on the wall does (the chip's knob). Both are the same promise: the
+ * numbers for *this* mount, one press away.
+ */
+function openMode(mode: Mode): void {
+  state.mode = mode
+  panelOpen = true
+  paintModes()
 }
 
 /**
@@ -260,6 +350,10 @@ const fieldBox = document.getElementById('fields') as HTMLElement
 const fieldRow = document.getElementById('field-row') as HTMLElement
 
 function onText(id: TextSlotId, value: string): void {
+  // The keystroke that changes nothing is the one on the caret moving, and a
+  // step for it would be a press of 撤销 that appears to do nothing.
+  if (state.text[id] === value) return
+  rememberStep(`text:${id}`)
   state.text[id] = value
   draw()
   // The words are the user's own work and the one thing on this screen that
@@ -320,8 +414,11 @@ function paintAdjusted(t: Template): void {
   const source = getTemplate(t.id) ?? savedTemplates().find((s) => s.id === t.id)
   // Nothing to compare against means nothing was overridden: a record with no
   // source in the rail is a record this app did not derive from one.
-  controlBox.dataset.adjusted =
-    source && geometryOf(source) !== geometryOf(t) ? 'true' : 'false'
+  const adjusted = !!source && geometryOf(source) !== geometryOf(t)
+  controlBox.dataset.adjusted = adjusted ? 'true' : 'false'
+  // 重置 is live exactly when the note is visible, and the note is visible
+  // exactly when there is something to go back from.
+  mountReset.disabled = !adjusted
 }
 
 function paintControls(): void {
@@ -345,7 +442,10 @@ function onControl(id: ControlId, raw: number): void {
   const t = state.template
   if (!t) return
   const next = setControl(t, id, raw, controlContext(t))
+  // Before the step, not after: a drag that landed on the value already there
+  // changes nothing and must not leave an 撤销 press behind it.
   if (next === t) return
+  rememberStep(`frame:${id}`)
   state.template = next
   syncControls(controlHost, controlSpecs(next, controlContext(next)))
   paintAdjusted(next)
@@ -354,12 +454,22 @@ function onControl(id: ControlId, raw: number): void {
 }
 
 function pick(id: string): void {
+  // The chip that is on is the way into its own numbers — the gesture the knob
+  // drawn in the middle of it promises — rather than the no-op it would
+  // otherwise be, and rather than the reset it used to be: throwing away edits
+  // behind a second click on the same chip is not something a user can find on
+  // purpose, so the reset now has a button in the panel it resets (重置).
+  if (id === state.template?.id) {
+    openMode('frame')
+    return
+  }
   // Both lists. A saved template cannot collide with a built-in id, so the
   // built-ins answer first and the saved list answers for the rest — the same
   // merge `paintRail` draws, so a chip on the rail is never a chip that
   // resolves to nothing.
   const t = getTemplate(id) ?? savedTemplates().find((x) => x.id === id)
   if (!t) return
+  rememberStep(`pick:${id}`)
   state.template = t
   paintRail(id)
   paintPlaque(t)
@@ -367,6 +477,7 @@ function pick(id: string): void {
   // The mount's own numbers, not the ones the last mount was given: a pick is
   // how a user gets back to the template as authored.
   paintControls()
+  paintModes()
   draw()
   persistSession()
 }
@@ -400,6 +511,7 @@ function paintPlaque(t: Template): void {
  */
 const photoBox = document.getElementById('photo-list') as HTMLElement
 const photoCount = document.getElementById('photo-count') as HTMLElement
+const photosN = document.getElementById('photos-n') as HTMLElement
 
 function photoList(): PhotoList {
   return { photos: state.photos, active: state.active }
@@ -414,6 +526,12 @@ function paintPhotos(): void {
   renderPhotoList(photoBox, photoList(), onSelectPhoto, onRemovePhoto)
   photoCount.textContent =
     state.photos.length === 0 ? '' : `${state.active + 1} / ${state.photos.length}`
+  // The same count in the phone's top bar, because there the column is behind a
+  // button and the button has to say whether there is anything behind it.
+  photosN.textContent = state.photos.length === 0 ? '' : ` ${state.photos.length}`
+  // The bare wall's own way in, which only matters on a phone (see `app.css`):
+  // on a desk the drop zone is a column away and in sight.
+  wallEmpty.hidden = state.photos.length > 0
 }
 
 function photoChanged(): void {
@@ -491,6 +609,10 @@ function onSelectPhoto(index: number): void {
   const next = selectPhoto(current, index)
   if (next === current) return
   useList(next)
+  // On a phone the list is a sheet over the poster, and choosing from it is the
+  // moment the user is done with it: leaving it open would hide the photograph
+  // they just chose. On a desk this is a no-op.
+  closePhotos()
   photoChanged()
 }
 
@@ -520,9 +642,139 @@ function onRemovePhoto(index: number): void {
   toast(`已移除 ${removed.name}`)
 }
 
+/** The phone's sheet, closed to begin with: the poster is what the screen is
+ *  for, and a list that opened over it would be the first thing a visitor saw. */
+let panelOpen = false
+
 const rail = document.getElementById('rail') as HTMLElement
+const tabsEl = document.getElementById('tabs') as HTMLElement
+const modesEl = document.getElementById('modes') as HTMLElement
+const panels = document.getElementById('panels') as HTMLElement
+const posterCap = document.getElementById('poster-cap') as HTMLElement
+const capName = document.getElementById('cap-name') as HTMLElement
+const capTag = document.getElementById('cap-tag') as HTMLElement
+const wallEmpty = document.getElementById('wall-empty') as HTMLElement
 const drop = document.getElementById('drop') as HTMLElement
 const file = document.getElementById('file') as HTMLInputElement
+const undoBtn = document.getElementById('undo') as HTMLButtonElement
+const redoBtn = document.getElementById('redo') as HTMLButtonElement
+const undoDesk = document.getElementById('undo-desk') as HTMLButtonElement
+const redoDesk = document.getElementById('redo-desk') as HTMLButtonElement
+const mountReset = document.getElementById('mount-reset') as HTMLButtonElement
+const photosOpen = document.getElementById('photos-open') as HTMLButtonElement
+
+// ---------------------------------------------------------------------------
+// 撤销 / 重做
+//
+// The stack itself is `src/ui/history.ts`; what lives here is the two moments
+// it cannot see — the snapshot taken *before* a mutation, and the repaint after
+// one. `rememberStep` is called by every edit; the key names what was edited, so
+// a burst of keystrokes into one field is one step and moving two different
+// sliders is two.
+// ---------------------------------------------------------------------------
+let historyStack = newHistory()
+
+/** The state a step returns to. Deep-copied, because `state.template` is one of
+ *  the `TEMPLATES` singletons until something edits it, and a snapshot that
+ *  shared a block with it would be rewritten by the very edit it exists to
+ *  undo. */
+function snapshot(): Draft {
+  return {
+    template: state.template ? deepCopy(state.template) : null,
+    text: { ...state.text },
+  }
+}
+
+function rememberStep(key: string): void {
+  historyStack = remember(historyStack, key, snapshot(), Date.now())
+  paintHistory()
+}
+
+function paintHistory(): void {
+  const back = !canUndo(historyStack)
+  const forward = !canRedo(historyStack)
+  undoBtn.disabled = back
+  undoDesk.disabled = back
+  redoBtn.disabled = forward
+  redoDesk.disabled = forward
+}
+
+/**
+ * Puts a draft back on the wall — the whole of what 撤销 and 重做 do with what
+ * `history.ts` hands them.
+ *
+ * Everything a pick repaints is repainted: the mount's own record, the words,
+ * the numbers, the panel that may no longer exist for it (an undo can land on
+ * 留白, which has no 文字), and the wall.
+ */
+function applyDraft(draft: Draft): void {
+  state.template = draft.template
+  state.text = { ...draft.text }
+  paintRail(state.template?.id ?? null)
+  if (state.template) paintPlaque(state.template)
+  paintFields()
+  paintControls()
+  paintModes()
+  draw()
+  persistSession()
+}
+
+function step(direction: 'undo' | 'redo'): void {
+  const moved = direction === 'undo' ? undo(historyStack, snapshot()) : redo(historyStack, snapshot())
+  if (!moved) return
+  historyStack = moved.history
+  applyDraft(moved.draft)
+  paintHistory()
+}
+
+undoBtn.addEventListener('click', () => step('undo'))
+redoBtn.addEventListener('click', () => step('redo'))
+undoDesk.addEventListener('click', () => step('undo'))
+redoDesk.addEventListener('click', () => step('redo'))
+
+/**
+ * 重置 — the mount as authored, which is what picking its own chip used to do
+ * before that gesture became the way into this panel. The comparison is
+ * `paintAdjusted`'s, so the button is live exactly when the note beside it is
+ * visible: there is nothing to reset about a record that already is the
+ * template.
+ */
+function resetMount(): void {
+  const t = state.template
+  if (!t || mountReset.disabled) return
+  const source = getTemplate(t.id) ?? savedTemplates().find((s) => s.id === t.id)
+  if (!source) return
+  rememberStep('reset')
+  // The singleton itself when it is a built-in: a record equal to the authored
+  // one *is* that template, and handing the app a copy would leave the rail
+  // comparing a record against something that looks just like it.
+  state.template = getTemplate(t.id) ?? { ...deepCopy(source) }
+  paintRail(state.template.id)
+  paintPlaque(state.template)
+  paintControls()
+  draw()
+  persistSession()
+}
+
+mountReset.addEventListener('click', resetMount)
+
+/**
+ * 照片 — the sheet on a phone. The list is the same element either way: above
+ * 901px it is the left column and this is a no-op nobody can see, below it the
+ * class is what slides it over the poster.
+ */
+function closePhotos(): void {
+  document.body.classList.remove('photos-open')
+  photosOpen.setAttribute('aria-expanded', 'false')
+}
+
+photosOpen.addEventListener('click', () => {
+  const open = document.body.classList.toggle('photos-open')
+  photosOpen.setAttribute('aria-expanded', open ? 'true' : 'false')
+})
+document.getElementById('photos-close')?.addEventListener('click', closePhotos)
+document.getElementById('scrim')?.addEventListener('click', closePhotos)
+document.getElementById('add-photo')?.addEventListener('click', () => file.click())
 
 wireInput(
   drop,
@@ -558,7 +810,13 @@ wireInput(
   readExif,
 )
 
-document.getElementById('save')?.addEventListener('click', async () => {
+/**
+ * 保存 — one handler behind the two buttons that carry the word: the dock's,
+ * which is the one on a desk, and the top bar's, which is the one on a phone.
+ * Only one of them is ever on screen (see `app.css`), and two copies of this
+ * work is how the two would come to disagree about what saving does.
+ */
+async function savePoster(): Promise<void> {
   const template = state.template
   const photo = activePhoto(state)
   if (!photo || !template) {
@@ -603,7 +861,10 @@ document.getElementById('save')?.addEventListener('click', async () => {
   } catch (e) {
     toast(e instanceof Error ? e.message : '导出失败')
   }
-})
+}
+
+document.getElementById('save')?.addEventListener('click', () => void savePoster())
+document.getElementById('save-top')?.addEventListener('click', () => void savePoster())
 
 /**
  * Appends `copy` to the saved list and reports where it landed — `stored` in
@@ -731,6 +992,10 @@ paintPhotos()
 paintRail(state.template?.id ?? null)
 paintFields()
 paintControls()
+paintModes()
+// An empty stack, so 撤销 starts disabled: the first thing a user can undo is
+// the first thing they do.
+paintHistory()
 draw()
 
 // ---------------------------------------------------------------------------
@@ -762,6 +1027,7 @@ if (restored && !demoMode) {
   if (state.template) paintPlaque(state.template)
   paintFields()
   paintControls()
+  paintModes()
   draw()
 }
 
@@ -904,6 +1170,7 @@ if (new URLSearchParams(location.search).has('dev')) {
     roundedRect,
     drawPlate,
     plateFields,
+    plateLines,
   }
   w.__frameTemplates = { TEMPLATES, getTemplate }
   w.__frameCeremony = { showCeremony }
