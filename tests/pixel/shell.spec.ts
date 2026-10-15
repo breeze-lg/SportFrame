@@ -101,24 +101,40 @@ test('the drop zone can be reached and opened from the keyboard alone', async ({
  * which controls each template gets, that a drag reaches the wall, and that
  * 存为模板 keeps the numbers.
  */
-test('the only adjustment surface is the 画面 panel', async ({ page }) => {
+test('the two panels between them are the adjustment surface, and nothing else is', async ({
+  page,
+}) => {
   await page.goto('/')
 
-  const sliders = page.locator('input[type="range"]')
-  // 经典 is the boot mount and a blur one, so all eight rows are on: five for
-  // the mount and three for 后景.
-  await expect(sliders).toHaveCount(8)
+  // 画面 first: 经典 is the boot mount and a blur one, so all eight rows are on —
+  // five for the mount and three for 后景.
+  const mount = page.locator('#control-row input[type="range"]')
+  await expect(mount).toHaveCount(8)
 
-  const labels = await sliders.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
+  const labels = await mount.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
   for (const label of labels) {
     expect(label, 'a slider with no accessible name').toBeTruthy()
     // one row per slider, with its own readout beside it
     await expect(page.locator(`#controls .ctl:has(input[aria-label="${label}"])`)).toHaveCount(1)
     await expect(page.locator(`#controls .ctl:has(input[aria-label="${label}"]) .ctl-val`)).toHaveCount(1)
   }
-  expect(new Set(labels).size, 'two sliders share a name').toBe(labels.length)
 
-  // And nothing outside the panel offers one: the rest of the dock is a drop
-  // zone, a rail of mounts, the text fields and two buttons.
-  expect(await sliders.evaluateAll((els) => els.filter((e) => !e.closest('#controls')).length)).toBe(0)
+  // 文字 next: two for the block's position, one per slot the template prints —
+  // and every one of them in the 文字 panel, not loose in the dock.
+  await page.locator('.mode', { hasText: '文字' }).click()
+  const type = page.locator('#field-row input[type="range"]')
+  await expect(type).toHaveCount(4)
+  expect(await type.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).toEqual([
+    '水平',
+    '垂直',
+    '副标题字号',
+    '主标题字号',
+  ])
+
+  // No slider anywhere else, and no two of them share a name: two slots both
+  // showing 字号 would be two sliders a screen reader cannot tell apart.
+  const all = page.locator('input[type="range"]')
+  expect(await all.evaluateAll((els) => els.filter((e) => !e.closest('#panels')).length)).toBe(0)
+  const names = await all.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
+  expect(new Set(names).size, 'two sliders share a name').toBe(names.length)
 })

@@ -1,10 +1,10 @@
 import { render } from './core/render'
-import { resolveSize, matRect, aspectOf } from './core/geometry'
+import { resolveSize, matRect, aspectOf, fitRect } from './core/geometry'
 import { TEMPLATES, getTemplate } from './core/templates'
 import { drawMat, roundedRect } from './core/mat'
 import { drawBackground } from './core/background'
-import { drawText, measureToFit, frameFont } from './core/text'
-import { drawPlate, plateFields, plateLines } from './core/plate'
+import { drawText, measureToFit, frameFont, blockTop, textSpan, baseSize } from './core/text'
+import { drawPlate, plateFields, plateLines, PLATE_WEIGHTS } from './core/plate'
 import { initTheme } from './ui/theme'
 import { createState } from './ui/state'
 import { toast } from './ui/toast'
@@ -20,7 +20,17 @@ import {
   undo,
   type Draft,
 } from './ui/history'
-import { renderFields } from './ui/fields'
+import {
+  DEFAULT_FAMILY,
+  renderFields,
+  syncFields,
+  wordsPanel,
+  type FontOption,
+  type TypeContext,
+} from './ui/fields'
+import { addFontFile, ensureFont, fontOptions, forgetFont, isLoaded } from './ui/fonts'
+import { frameRect, settleText, sizeCeiling, textOffsetBounds } from './core/limits'
+import { FONT_CHOICES, MONO_STACK, SYSTEM_STACK, stackOf } from './core/fonts'
 import {
   activePhoto,
   addPhotos,
@@ -41,7 +51,7 @@ import {
 } from './ui/controls'
 import { plaqueText } from './ui/plaque'
 import { loadCustom, saveCustom, browserStorage, sessionStore } from './ui/custom'
-import type { Photo, Size, Template, TextSlotId } from './core/types'
+import type { Photo, Size, Template, TextAnchor, TextConfig, TextSlotId } from './core/types'
 import { releasePhoto, wireInput } from './ui/input'
 import {
   MAX_PHOTOS,
@@ -349,6 +359,28 @@ function openMode(mode: Mode): void {
 const fieldBox = document.getElementById('fields') as HTMLElement
 const fieldRow = document.getElementById('field-row') as HTMLElement
 
+/**
+ * The faces the picker offers: the presets, then whatever the user has loaded.
+ * Cached, because the panel is rebuilt on every pick and `fontOptions` reads the
+ * store — and refreshed on the two events that change the answer, which are
+ * loading a font and removing one.
+ */
+let families: FontOption[] = []
+
+/** What the 文字 panel's ceilings are measured against: the canvas, the
+ *  photograph's box inside it, and the depth of the band under it. The same three
+ *  things `render` lays the words out with, so a slider's maximum is a claim about
+ *  the poster on screen. */
+function typeContext(t: Template): TypeContext {
+  const photo = activePhoto(state)
+  const size = canvasSize(t)
+  const aspect = aspectOf(
+    t.canvas.ratio,
+    photo ? { width: photo.width, height: photo.height } : undefined,
+  )
+  return { size, frame: frameRect(size, aspect, t.frame.scale), matBottom: t.frame.matBottom }
+}
+
 function onText(id: TextSlotId, value: string): void {
   // The keystroke that changes nothing is the one on the caret moving, and a
   // step for it would be a press of 撤销 that appears to do nothing.
@@ -361,8 +393,194 @@ function onText(id: TextSlotId, value: string): void {
   persistSession()
 }
 
+/**
+ * A typography write — one slot's size, one slot's face, the block's anchor, one
+ * of its offsets. They are the same three steps as a 画面 slider, because they
+ * write the same record: settle against the layout, repaint what reads the
+ * record, redraw.
+ *
+ * `syncFields` rather than `paintFields` on the way out: a slider rebuilt under
+ * the pointer loses the drag, so the DOM stays and only its bounds and readouts
+ * move — the same reason `syncControls` exists next door.
+ */
+function editText(key: string, patch: (config: TextConfig) => TextConfig): void {
+  const t = state.template
+  if (!t?.text) return
+  const ctx = typeContext(t)
+  const settled = settleText(ctx.size, patch(t.text), ctx.frame, ctx.matBottom)
+  // The reference comparison is what tells "the user moved something" from "the
+  // app re-derived the same record" — and the 已调整 marker rides on that answer.
+  if (settled === t.text) return
+  const record: Template = { ...t, text: settled }
+  rememberStep(key)
+  state.template = record
+  syncFields(fieldRow, wordsPanel(settled, state.text, ctx, families))
+  paintAdjusted(record)
+  draw()
+  persistSession()
+}
+
+function onSlotSize(index: number, size: number): void {
+  editText(`text-size:${index}`, (config) => ({
+    ...config,
+    slots: config.slots.map((s, i) => (i === index ? { ...s, size } : s)),
+  }))
+}
+
+function onSlotFamily(index: number, family: string): void {
+  const id = family === DEFAULT_FAMILY ? undefined : family
+  editText(`text-font:${index}`, (config) => ({
+    ...config,
+    slots: config.slots.map((s, i) => (i === index ? { ...s, family: id } : s)),
+  }))
+  // A face that is in the record but not in the document draws as the fallback
+  // until it is registered — which is the redraw this waits for.
+  void resolveFonts()
+}
+
+function onAnchor(anchor: TextAnchor): void {
+  editText('text-anchor', (config) => ({ ...config, anchor }))
+}
+
+function onOffset(axis: 'dx' | 'dy', value: number): void {
+  editText(`text-${axis}`, (config) => ({ ...config, [axis]: value }))
+}
+
+/**
+ * The ＋ on a slot's row: take a font file, register it, keep it, and set *that
+ * slot* to it. Which slot the button belongs to is the whole reason it is on the
+ * row rather than in a settings page — "load a handwriting face for this line" is
+ * the request this answers.
+ */
+let fontTarget: number | null = null
+const fontFile = document.getElementById('font-file') as HTMLInputElement
+
+fontFile.addEventListener('change', () => {
+  const file = fontFile.files?.[0]
+  // Cleared before the work, so picking the same file twice fires twice: a
+  // second attempt at a file that failed the first time is a real thing to do.
+  fontFile.value = ''
+  const index = fontTarget
+  fontTarget = null
+  if (!file || index === null) return
+  void (async () => {
+    const loaded = await addFontFile(file)
+    if (!loaded.ok) {
+      toast(loaded.error)
+      return
+    }
+    families = await fontOptions()
+    // A full repaint and not `syncFields`: the picker has to *gain* the option
+    // before the value can be set to it, and an option added to a `<select>` that
+    // is already in the DOM is the one thing the sync pass does not do.
+    paintFields()
+    onSlotFamily(index, loaded.id)
+    toast(`字体已载入：${loaded.name}`)
+  })()
+})
+
+/** Removes a loaded font from the store. A record still naming it keeps drawing
+ *  it for this session — the face is in `document.fonts` and has no delete — and
+ *  the picker marks it 未加载, which is the honest state of a poster whose face is
+ *  about to be gone after a reload. */
+async function onForgetFont(family: string): Promise<void> {
+  const name = family.replace(/^user:/, '')
+  await forgetFont(name)
+  families = await fontOptions()
+  paintFields()
+  toast(`已移除字体：${name}`)
+}
+
+/**
+ * Registers the faces the current record names, and redraws if any of them
+ * arrived — including the app's own.
+ *
+ * Two very different reasons a poster can be drawn in the wrong face, and both
+ * end here:
+ *
+ * 1. **The app's own faces.** They are woff2 files with `font-display: swap`, and
+ *    a canvas never asks the browser for a face: it draws with whatever is in
+ *    `document.fonts` at that instant. So a poster drawn before the browser has
+ *    fetched `IBM Plex Mono` comes out in the fallback — and *stays* there,
+ *    because the `loadingdone` event belongs to the DOM's own request, not to a
+ *    canvas's silence. `document.fonts.load` is the request the canvas cannot
+ *    make. A session restored off the record is exactly this case: it is drawn a
+ *    moment after boot, off bytes it just read, and an export taken straight
+ *    after a refresh would have kept the fallback type.
+ * 2. **The user's own faces.** A record can name a `user:` family this session
+ *    has not registered — a font loaded in an earlier visit, read back from the
+ *    store — and until the face is up the canvas is drawing the app's stack.
+ */
+async function resolveFonts(): Promise<void> {
+  let arrived = false
+
+  for (const face of posterFaces()) {
+    if (document.fonts.check(face)) continue
+    try {
+      await document.fonts.load(face)
+    } catch {
+      // An unavailable family is not an error: every stack ends in one this app
+      // can draw, and the browser falls through on its own.
+    }
+    arrived = true
+  }
+
+  const wanted = new Set(
+    (state.template?.text?.slots ?? [])
+      .map((s) => s.family)
+      .filter((f): f is string => !!f && !isLoaded(f)),
+  )
+  for (const family of wanted) {
+    if (await ensureFont(family)) arrived = true
+  }
+
+  if (!arrived) return
+  paintFields()
+  draw()
+}
+
+/**
+ * Every face the poster in hand can put on the wall: the plate's two weights, and
+ * one per text slot, in each slot's own weight and family. The size in the string
+ * is a formality — `fonts.load` resolves a face, not a measurement — so it is 16
+ * for all of them.
+ */
+function posterFaces(): string[] {
+  // the plate's two weights, then each text slot's own weight and family
+  const faces = PLATE_WEIGHTS.map((w) => `${w} 16px ${MONO_STACK}`)
+  for (const slot of state.template?.text?.slots ?? []) {
+    faces.push(`${slot.weight} 16px ${slot.family ? stackOf(slot.family) : SYSTEM_STACK}`)
+  }
+  return [...new Set(faces)]
+}
+
 function paintFields(): void {
-  const drawn = renderFields(fieldRow, state.template?.text, state.text, onText)
+  const t = state.template
+  if (!t?.text) {
+    // A template with no typography declares no slots, and there is no panel to
+    // draw — but the row still has to be *cleared*: it is holding the last
+    // template's blocks, and an input left behind is a control that takes typing
+    // and writes it to a poster that does not print it.
+    fieldRow.textContent = ''
+    fieldBox.hidden = true
+    return
+  }
+  const drawn = renderFields(
+    fieldRow,
+    wordsPanel(t.text, state.text, typeContext(t), families),
+    {
+      onInput: onText,
+      onSize: onSlotSize,
+      onFamily: onSlotFamily,
+      onAnchor,
+      onOffset,
+      onLoadFont: (index) => {
+        fontTarget = index
+        fontFile.click()
+      },
+      onForgetFont: (family) => void onForgetFont(family),
+    },
+  )
   fieldBox.hidden = drawn === 0
 }
 
@@ -392,12 +610,13 @@ function controlContext(t: Template): ControlContext {
 
 /**
  * The two blocks of a record that decide what the poster looks like — the ones
- * the 画面 panel writes. Compared as JSON because they are plain data, and a
- * field-by-field comparison would be a second list of the fields to keep in
- * step with the first.
+ * the 画面 panel writes — plus the words' typography, which the 文字 panel writes
+ * into the same record. Compared as JSON because they are plain data, and a
+ * field-by-field comparison would be a second list of the fields to keep in step
+ * with the first.
  */
 function geometryOf(t: Template): string {
-  return JSON.stringify([t.frame, t.background])
+  return JSON.stringify([t.frame, t.background, t.text])
 }
 
 /**
@@ -405,17 +624,19 @@ function geometryOf(t: Template): string {
  *
  * The comparison is against the record the rail *resolves* for this id: the
  * built-in for a built-in, the stored record for a saved template. That is the
- * honest reading of "edited and not saved", and it is why re-picking the mount
- * you are already on clears the marker — `pick` hands back the stock record and
- * the numbers the user moved are gone, which is the one thing the marker exists
- * to warn them about.
+ * honest reading of "edited and not saved". The attribute goes on the *panels*
+ * and not on 画面, because what it warns about is the whole record — the mount's
+ * numbers and the words' type — and the note and 重置 above both panels read it
+ * from there (see `app.css`).
  */
+/** The record's own marker: `#record-acts[data-adjusted]` is what shows 已调整 and
+ *  what enables 重置, and the CSS reads it from that one attribute. */
 function paintAdjusted(t: Template): void {
   const source = getTemplate(t.id) ?? savedTemplates().find((s) => s.id === t.id)
   // Nothing to compare against means nothing was overridden: a record with no
   // source in the rail is a record this app did not derive from one.
   const adjusted = !!source && geometryOf(source) !== geometryOf(t)
-  controlBox.dataset.adjusted = adjusted ? 'true' : 'false'
+  recordActs.dataset.adjusted = adjusted ? 'true' : 'false'
   // 重置 is live exactly when the note is visible, and the note is visible
   // exactly when there is something to go back from.
   mountReset.disabled = !adjusted
@@ -479,6 +700,9 @@ function pick(id: string): void {
   paintControls()
   paintModes()
   draw()
+  // A pick (or an undo) can land on a record that names a face this session has
+  // not registered yet: see `resolveFonts`.
+  void resolveFonts()
   persistSession()
 }
 
@@ -650,6 +874,7 @@ const rail = document.getElementById('rail') as HTMLElement
 const tabsEl = document.getElementById('tabs') as HTMLElement
 const modesEl = document.getElementById('modes') as HTMLElement
 const panels = document.getElementById('panels') as HTMLElement
+const recordActs = document.getElementById('record-acts') as HTMLElement
 const posterCap = document.getElementById('poster-cap') as HTMLElement
 const capName = document.getElementById('cap-name') as HTMLElement
 const capTag = document.getElementById('cap-tag') as HTMLElement
@@ -716,6 +941,9 @@ function applyDraft(draft: Draft): void {
   paintControls()
   paintModes()
   draw()
+  // A pick (or an undo) can land on a record that names a face this session has
+  // not registered yet: see `resolveFonts`.
+  void resolveFonts()
   persistSession()
 }
 
@@ -751,7 +979,12 @@ function resetMount(): void {
   state.template = getTemplate(t.id) ?? { ...deepCopy(source) }
   paintRail(state.template.id)
   paintPlaque(state.template)
+  // Both panels, because the record carries both: 重置 is as much about the
+  // words' type as about the mat, and a 文字 panel still showing the numbers that
+  // were just reset would be describing a record the app is no longer holding.
+  paintFields()
   paintControls()
+  paintModes()
   draw()
   persistSession()
 }
@@ -1122,6 +1355,33 @@ if (demoMode) {
 }
 
 // ---------------------------------------------------------------------------
+// The typefaces, one step after the first frame.
+//
+// Both halves are reads out of the store — the picker's list of names, and the
+// faces the current record names — and both end in a repaint of the 文字 panel.
+// Deferring them is what keeps the first frame a synchronous paint of a poster
+// the app already knows, and it costs nothing: until they land the picker is
+// short a group and a record's `user:` face draws as its fallback.
+// ---------------------------------------------------------------------------
+void (async () => {
+  families = await fontOptions()
+  paintFields()
+  await resolveFonts()
+})()
+
+// ---------------------------------------------------------------------------
+// ...and the app's own faces, which arrive after the first frame too.
+//
+// The fix for that is `resolveFonts` above, which *asks* for every face the poster
+// needs — a canvas never asks for itself. This is the belt to its braces: the
+// event fires when a face lands, whoever wanted it, and one render is the whole
+// cost of being sure the wall is not wearing a fallback.
+// ---------------------------------------------------------------------------
+if (typeof document.fonts?.addEventListener === 'function') {
+  document.fonts.addEventListener('loadingdone', () => draw())
+}
+
+// ---------------------------------------------------------------------------
 // Dev affordance — see spec §8. Enabled only with ?dev=1.
 //
 // All five handles are one block here: Tasks 4-9 each appended the slice its
@@ -1135,6 +1395,12 @@ if (new URLSearchParams(location.search).has('dev')) {
   const w = window as unknown as Record<string, unknown>
   w.__frame = {
     canvas: probeCanvas,
+    /** The photograph the wall is holding, as the app holds it — the only way a
+     *  spec can ask what the app knows rather than what it drew. */
+    photo: () => {
+      const p = activePhoto(state)
+      return p ? { name: p.name, width: p.width, height: p.height, exif: p.exif } : null
+    },
     size: () => ({ W: probeCanvas.width, H: probeCanvas.height }),
     setSize: (W: number, H: number) => {
       probeCanvas.width = W
@@ -1168,11 +1434,23 @@ if (new URLSearchParams(location.search).has('dev')) {
     frameFont,
     matRect,
     roundedRect,
+    fitRect,
+    aspectOf,
+    frameRect,
     drawPlate,
     plateFields,
     plateLines,
+    // the type block's own arithmetic, so a spec can ask the same questions the
+    // panel's ceilings ask without reaching into `src/`
+    blockTop,
+    textSpan,
+    baseSize,
+    textOffsetBounds,
+    sizeCeiling,
+    settleText,
   }
   w.__frameTemplates = { TEMPLATES, getTemplate }
+  w.__frameFonts = { FONT_CHOICES, stackOf }
   w.__frameCeremony = { showCeremony }
   w.__frameExport = { exportPng, renderToCanvas, fitsCanvas, stamp }
 }

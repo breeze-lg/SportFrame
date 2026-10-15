@@ -585,15 +585,57 @@ canvas#cv:not([width]) { visibility: hidden; }
 .panels[data-mode='words'] .controls { display: none; }
 .panels[data-mode='frame'] .fields { display: none; }
 
-/* The panel heading's two actions, at its right edge: 重置 (the mount as
-   authored) and 存为模板 (these numbers under a name). `margin-left: auto`
-   rather than `space-between` on the heading, because the note between them is
-   `visibility`-hidden and a heading that re-spread on every edit would move the
-   buttons out from under the pointer. */
+/* The panel heading's two actions used to live here; they are record-level (they
+   act on the mount *and* on the words' typography) and have moved to the row
+   above both panels. */
 .btn-small { padding: 4px 9px; font-size: 12px; }
-.controls .rail-h { justify-content: flex-start; gap: 8px; }
-#mount-reset { margin-left: auto; }
+
+/* 记录级的两个动作 —— 重置 / 存为模板, and the 已调整 note. They belong to no
+   panel: both panels write the same record, so 重置 has to be in reach while the
+   words are being typed as much as while the mat is being dragged. */
+.record-acts { display: flex; align-items: center; gap: 6px; }
+.record-acts .ctl-note { margin-right: auto; }
+/* 已调整 由一个属性驱动（`#record-acts[data-adjusted]`，见 `paintAdjusted`），样式表
+   决定它算不算一件事。`visibility` 而不是 `display`，所以它出现时两个按钮不会挪位置。 */
+.record-acts[data-adjusted='false'] .ctl-note { visibility: hidden; }
 #mount-reset:disabled { color: var(--faint); cursor: default; }
+
+/* 文字面板 —— 位置一块，然后每个槽位一块：内容 / 字体 / 字号。字体下拉在 340px 的栏里
+   和滑块挤一行会两者都读不清，所以它们各占一行。 */
+.pos-block,
+.slot-block { display: flex; flex-direction: column; gap: 6px; }
+/* The position block's own note, and deliberately not `.ctl-note`: that class
+   belongs to the one 已调整 note above the panels, and the stylesheet reads it as
+   a flag rather than as a caption (see `.panels[data-adjusted]`). */
+.pos-note { font-family: var(--mono); font-size: 10.5px; color: var(--quiet); }
+.slot-block { padding-top: 8px; border-top: 1px solid var(--bevel); }
+.slot-type { display: flex; align-items: center; gap: 6px; }
+.font-pick {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--bevel);
+  border-radius: 2px;
+  padding: 5px 6px;
+}
+.font-pick:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; border-color: var(--ink); }
+.anchors { display: flex; gap: 4px; }
+.anchor {
+  flex: 1;
+  padding: 5px 4px;
+  border: 1px solid var(--bevel);
+  border-radius: 2px;
+  background: var(--surface);
+  color: var(--quiet);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.anchor.on { border-color: var(--ink); color: var(--ink); box-shadow: var(--lift); }
+.anchor:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 /* 已调整 的圆点 — the mark in the middle of the chip that is on. The reference
    editor draws a button there, and the gesture is real here too (picking the
@@ -724,8 +766,11 @@ canvas#cv:not([width]) { visibility: hidden; }
     border-top: 1px solid var(--bevel);
   }
   .panels { order: 1; }
+  /* 记录的两个动作 between the panel and the switch: the switch is the capsule at
+     the foot of the screen, and these are what the panel it opened writes. */
+  .record-acts { order: 2; }
   .modes {
-    order: 2;
+    order: 3;
     position: sticky;
     bottom: 0;
     padding: 8px 0 2px;

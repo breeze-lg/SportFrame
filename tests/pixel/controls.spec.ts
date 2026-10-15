@@ -154,18 +154,18 @@ test('the 已调整 note appears on an edit and clears when the mount is re-pick
   await loadPhoto(page)
   const bare = await digest(page)
 
-  await expect(page.locator('#controls')).toHaveAttribute('data-adjusted', 'false')
+  await expect(page.locator('#record-acts')).toHaveAttribute('data-adjusted', 'false')
   await expect(page.locator('.ctl-note')).toBeHidden()
 
   await set(page, '白边', 40)
-  await expect(page.locator('#controls')).toHaveAttribute('data-adjusted', 'true')
+  await expect(page.locator('#record-acts')).toHaveAttribute('data-adjusted', 'true')
   await expect(page.locator('.ctl-note')).toBeVisible()
 
   // 重置, not a second click on the chip: that gesture is what opens this panel
   // now (the knob in the middle of the chip that is on), so the way back to the
   // numbers as authored is the button that says so.
   await page.locator('#mount-reset').click()
-  await expect(page.locator('#controls')).toHaveAttribute('data-adjusted', 'false')
+  await expect(page.locator('#record-acts')).toHaveAttribute('data-adjusted', 'false')
   expect(await digest(page)).toBe(bare)
   // ...and it goes dead again: there is nothing left to reset.
   await expect(page.locator('#mount-reset')).toBeDisabled()
@@ -199,7 +199,7 @@ test('存为模板 keeps the numbers the sliders set', async ({ page }) => {
   await expect(readout(page, 'ox')).toHaveText('25%')
   // A saved template is the rail's own record for that id — nothing is
   // overridden, so nothing is marked as unsaved.
-  await expect(page.locator('#controls')).toHaveAttribute('data-adjusted', 'false')
+  await expect(page.locator('#record-acts')).toHaveAttribute('data-adjusted', 'false')
 })
 
 test('a saved template carries its numbers through a reload', async ({ page }) => {
@@ -297,7 +297,7 @@ test('the sliders are rebuilt for the template that is on, not carried over', as
   await expect(readout(page, 'scale')).toHaveText('66%')
   await expect(readout(page, 'mat')).toHaveText('86px')
   await expect(readout(page, 'matBottom')).toHaveText('150px')
-  await expect(page.locator('#controls')).toHaveAttribute('data-adjusted', 'false')
+  await expect(page.locator('#record-acts')).toHaveAttribute('data-adjusted', 'false')
 
   // 留白 carries no mat at all, and no 后景 of its own kind to lose.
   await chip(page, '留白').click()

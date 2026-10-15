@@ -126,7 +126,7 @@ test('a refresh comes back where it was', async ({ page }) => {
   await expect(readout(page, 'scale')).toHaveText('52%')
   // ...and the numbers are still recognised as an *edit* of 拍立得 rather than as
   // 拍立得 itself: the marker is part of what a session remembers
-  await expect(page.locator('#controls')).toHaveAttribute('data-adjusted', 'true')
+  await expect(page.locator('#record-acts')).toHaveAttribute('data-adjusted', 'true')
 
   // and the poster is the poster, to the pixel: the same template, the same
   // words, the same numbers, and the same file decoded from the same bytes

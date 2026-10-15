@@ -1,3 +1,4 @@
+import { MONO_STACK } from './fonts'
 import type { Exif, Plate, PlateField, Rect } from './types'
 
 /**
@@ -89,11 +90,16 @@ export function plateLines(plate: Plate, exif: Exif | null): string[][] {
   return [camera, rest]
 }
 
-/** The plate's typeface, mono like every other value the app reads out. The
- *  headline's weight is the whole of how the two lines are told apart. */
+/** The plate's typeface, mono like every other value the app reads out, and the
+ *  same stack the DOM's `--mono` uses. The headline's weight is the whole of how
+ *  the two lines are told apart. */
 function font(size: number, weight: number): string {
-  return `${weight} ${size}px 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace`
+  return `${weight} ${size}px ${MONO_STACK}`
 }
+
+/** The weights the plate draws with, so a caller can ask the browser for both of
+ *  them before this file ever runs — a canvas cannot ask for itself. */
+export const PLATE_WEIGHTS = [600, 400] as const
 
 /**
  * Draws the plate into `band`, or draws nothing at all.

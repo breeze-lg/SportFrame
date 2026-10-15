@@ -81,6 +81,16 @@ export function validateTemplate(t: unknown): Validation {
     const tx = o.text as Record<string, unknown> | null
     if (typeof tx !== 'object' || tx === null) return { ok: false, error: 'text must be an object' }
     if (!ANCHORS.includes(tx.anchor as TextAnchor)) return { ok: false, error: 'invalid anchor' }
+    // optional, like the frame's offsets: a record written before the 文字 panel
+    // could move a block has none, and absent means on its anchor — which is what
+    // it drew. A NaN that *is* present still has to be refused: the block would
+    // land nowhere at all.
+    for (const key of ['dx', 'dy']) {
+      const v = tx[key]
+      if (v === undefined) continue
+      if (typeof v !== 'number') return { ok: false, error: `text.${key} must be a number` }
+      if (!Number.isFinite(v)) return { ok: false, error: `text.${key} must be finite` }
+    }
     if (!Array.isArray(tx.slots)) return { ok: false, error: 'slots must be an array' }
     // `drawText` reads `slot.id` off every element without a guard, so a bare
     // `null` here is the one malformed record that crashes rather than
@@ -93,6 +103,12 @@ export function validateTemplate(t: unknown): Validation {
       }
       if (!SLOT_IDS.includes(slot.id as TextSlotId)) {
         return { ok: false, error: `invalid text.slots[${i}].id` }
+      }
+      // an unknown family id is not an error — `stackOf` answers the system
+      // stack for anything it does not know, on purpose, because a record may
+      // come from a build with more fonts than this one
+      if (slot.family !== undefined && typeof slot.family !== 'string') {
+        return { ok: false, error: `text.slots[${i}].family must be a string` }
       }
     }
   }
@@ -144,7 +160,13 @@ export const TEMPLATES: Template[] = [
     canvas: { ratio: '4:5' },
     background: { mode: 'blur', blur: 36, darken: 14, zoom: 134 },
     frame: { scale: 64, radius: 0, mat: 16, matBottom: 104, shadow: 38 },
-    text: { anchor: 'mat', slots: [{ id: 'title', size: 26, weight: 400, color: '#2b2b2b' }] },
+    // 手写体: a polaroid's caption is written on it with a pen, and the app
+    // should say so with the one face that means that. Every other style keeps
+    // its body face and lets the user pick — see the 文字 panel.
+    text: {
+      anchor: 'mat',
+      slots: [{ id: 'title', size: 26, weight: 400, color: '#2b2b2b', family: 'hanzipen' }],
+    },
   },
   {
     id: 'magazine',
@@ -183,7 +205,11 @@ export const TEMPLATES: Template[] = [
     canvas: { ratio: '3:2' },
     background: { mode: 'blur', blur: 40, darken: 12, zoom: 126 },
     frame: { scale: 72, radius: 2, mat: 18, matBottom: 74, shadow: 30 },
-    text: { anchor: 'mat', slots: [{ id: 'title', size: 28, weight: 400, color: '#333333' }] },
+    // 楷体, for the same reason: a postcard is written by hand.
+    text: {
+      anchor: 'mat',
+      slots: [{ id: 'title', size: 28, weight: 400, color: '#333333', family: 'kaiti' }],
+    },
   },
   {
     id: 'minimal',

@@ -1,15 +1,27 @@
+import { SYSTEM_STACK, stackOf } from './fonts'
 import type { Rect, Size, TextConfig, TextSlot, TextSlotId } from './types'
-
-// Chinese text renders from the system stack and never gets a webfont:
-// shipping a CJK webfont costs megabytes. Do not add one.
-const CJK_FAMILY = '-apple-system,"PingFang SC","Helvetica Neue",Arial,sans-serif'
 
 /** Line advance between two baselines, as a multiple of the taller of the two
  *  lines it separates — the same half-leading idea CSS line boxes use. */
 const LINE = 1.15
 
-export function frameFont(size: number, weight: number): string {
-  return `${weight} ${size}px ${CJK_FAMILY}`
+/** How much of the canvas's width a line may occupy — the fit rule
+ *  `drawText` honours, and the reason the panel's horizontal ceiling is
+ *  `50·(1 − FIT)`: a block can never be wider than this share of the canvas, so
+ *  it can never be shifted sideways by more than the rest. Shared with
+ *  `src/core/limits.ts` rather than repeated, because a ceiling derived from a
+ *  different number than the renderer uses is a ceiling that lies. */
+export const TEXT_FIT = 0.86
+
+/** A line's size in logical pixels, from the record's own units: `size` is a
+ *  percentage, so 34 is 34% of a fifth of the canvas's height. The one place
+ *  that conversion happens, shared with the ceilings in `limits.ts`. */
+export function baseSize(size: number, H: number): number {
+  return (size / 100) * H * 0.2
+}
+
+export function frameFont(size: number, weight: number, family?: string): string {
+  return `${weight} ${size}px ${family === undefined ? SYSTEM_STACK : stackOf(family)}`
 }
 
 /**
@@ -32,6 +44,88 @@ export function measureToFit(
 }
 
 type Line = { slot: TextSlot; raw: string; fitted: number }
+
+/** How much of a line's size sits above its baseline, and below it. Estimates
+ *  rather than metrics — the ceilings that use them are promises that something
+ *  fits, and where a promise is approximate the useful error is the one that
+ *  leaves a margin. Shared with `src/core/limits.ts`, which derives every 文字
+ *  bound from the same two numbers the box below is measured with. */
+export const TEXT_ASCENT = 0.9
+export const TEXT_DESCENT = 0.3
+
+/** The first and last line's sizes in logical pixels, in draw order, for a block
+ *  declared as `config` declares it. */
+function lineBases(config: TextConfig, H: number, k: number): number[] {
+  const seen = new Set<TextSlotId>()
+  const bases: number[] = []
+  for (const slot of config.slots) {
+    if (seen.has(slot.id)) continue
+    seen.add(slot.id)
+    bases.push(baseSize(slot.size, H) * k)
+  }
+  return bases
+}
+
+/**
+ * The block's height in logical pixels, from the slots as DECLARED rather than
+ * as drawn, and from their unfitted sizes.
+ *
+ * That is a deliberate upper bound, and it is what the 文字 panel's sliders are
+ * measured against: a ceiling computed from the words currently typed would move
+ * every time a character was added — a slider whose `max` changes under the
+ * pointer is a slider nobody can drag. So the panel promises "this fits, whatever
+ * you type", and `measureToFit` inside `drawText` is left to honour it by
+ * shrinking a long line.
+ */
+export function textSpan(config: TextConfig, size: Size, k: number): number {
+  const bases = lineBases(config, size.H, k)
+  let span = 0
+  for (let i = 1; i < bases.length; i++) span += Math.max(bases[i - 1]!, bases[i]!) * LINE
+  return span
+}
+
+/**
+ * The block's box, top to bottom: the first line's ascent, the baselines, and the
+ * last line's descent.
+ *
+ * `textSpan` alone is zero for a single line, and a single line half the height
+ * of the canvas on a 150px band is exactly the case the ceilings exist for — so
+ * the room a block has is measured against this and not against the span.
+ */
+export function textBoxHeight(config: TextConfig, size: Size, k: number): number {
+  const bases = lineBases(config, size.H, k)
+  if (bases.length === 0) return 0
+  return (bases[0] ?? 0) * TEXT_ASCENT + textSpan(config, size, k) + (bases[bases.length - 1] ?? 0) * TEXT_DESCENT
+}
+
+/**
+ * Where the block's first baseline sits, before `dx`/`dy` — the anchor's own
+ * arithmetic, in the one place the renderer and the panel's ceilings can both
+ * read it.
+ *
+ * `frame` and `matBottom`-derived distances are DEVICE pixels, `size` is
+ * logical, and `k` bridges them — the two units `drawText` documents at length.
+ */
+export function blockTop(
+  config: TextConfig,
+  size: Size,
+  span: number,
+  frame: Rect,
+  k: number,
+  matBottom = 0,
+): number {
+  const { H } = size
+  if (config.anchor === 'mat' && matBottom > 4 * k) {
+    // the white band below the photo: the block starts 62% down it, which
+    // reads as optically centred rather than mathematically centred.
+    return frame.y + frame.h + matBottom * k * 0.62
+  }
+  if (config.anchor === 'top') return H * 0.10 * k
+  if (config.anchor === 'center') return H * 0.50 * k - span / 2
+  // 'bottom', and 'mat' on a template with no bottom mat to speak of: never
+  // place text into a band too thin to hold it.
+  return H * 0.90 * k - span
+}
 
 /**
  * Draws the configured slots onto the canvas.
@@ -87,11 +181,11 @@ export function drawText(
     // not the same words printed twice, over each other.
     if (!raw || seen.has(slot.id)) continue
     seen.add(slot.id)
-    const base = (slot.size / 100) * H * 0.20 * k
+    const base = baseSize(slot.size, H) * k
     lines.push({
       slot,
       raw,
-      fitted: measureToFit(ctx, raw, maxW, (s) => frameFont(s, slot.weight), base),
+      fitted: measureToFit(ctx, raw, maxW, (s) => frameFont(s, slot.weight, slot.family), base),
     })
   }
   if (lines.length === 0) return
@@ -109,21 +203,11 @@ export function drawText(
     return span
   })
 
-  let y0: number
-  if (config.anchor === 'mat' && matBottom > 4 * k) {
-    // the white band below the photo: the block starts 62% down it, which
-    // reads as optically centred rather than mathematically centred. `frame` is
-    // device pixels (see above), so `matBottom * k` is the one conversion.
-    y0 = frame.y + frame.h + matBottom * k * 0.62
-  } else if (config.anchor === 'top') {
-    y0 = H * 0.10 * k
-  } else if (config.anchor === 'center') {
-    y0 = H * 0.50 * k - span / 2
-  } else {
-    // 'bottom', and 'mat' on a template with no bottom mat to speak of: never
-    // place text into a band too thin to hold it.
-    y0 = H * 0.90 * k - span
-  }
+  // The anchor places the block and `dx`/`dy` move it from there, as a share of
+  // the canvas — the two halves of "where the words go", and the reason the panel
+  // offers an anchor *and* a nudge rather than eight presets.
+  const y0 = blockTop(config, size, span, frame, k, matBottom) + ((config.dy ?? 0) / 100) * H * k
+  const cx = W * 0.5 * k + ((config.dx ?? 0) / 100) * W * k
 
   ctx.save()
   ctx.textBaseline = 'alphabetic'
@@ -131,15 +215,15 @@ export function drawText(
 
   lines.forEach(({ slot, raw, fitted }, i) => {
     const y = y0 + offsets[i]!
-    ctx.font = frameFont(fitted, slot.weight)
+    ctx.font = frameFont(fitted, slot.weight, slot.family)
     if (slot.stroke) {
       ctx.lineWidth = fitted * 0.14
       ctx.strokeStyle = 'rgba(0,0,0,.55)'
       ctx.lineJoin = 'round'
-      ctx.strokeText(raw, W * 0.5 * k, y)
+      ctx.strokeText(raw, cx, y)
     }
     ctx.fillStyle = slot.color
-    ctx.fillText(raw, W * 0.5 * k, y)
+    ctx.fillText(raw, cx, y)
   })
 
   ctx.restore()

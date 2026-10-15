@@ -14,6 +14,29 @@ The metadata, though, is original. It is factual data — real IFD structures,
 real maker notes, real byte orders, written by real firmware — and it is the
 part the parser actually reads.
 
+## The font fixture
+
+`dejavu-subset.ttf` (about 16 KB) is not one of the JPEGs above and is not read
+by `exif.test.ts`. It exists for `tests/pixel/type.spec.ts`, which has to load a
+face the way a user does — a real TrueType file through the file input — rather
+than assert that `FontFace` exists.
+
+Provenance: **DejaVu Sans**, subset to the Latin letters and digits the test
+types. DejaVu's licence (the Bitstream Vera licence, plus the DejaVu changes)
+permits redistribution and modification. It is a *sans* on purpose: the test's
+claim is that a face the user brought reaches the canvas, and a face that looks
+nothing like the app's own is the clearest way to watch that happen.
+
+Regenerate (needs Python 3 and `fontTools`, which arrives with `matplotlib` in
+the same environment):
+
+```sh
+python3 scripts/make-font-fixture.py
+```
+
+That script is an authoring tool like the JPEGs' — nothing imports it and the
+build does not need it.
+
 ## What is in each file
 
 | file | EXIF bytes written by | order | what it pins |

@@ -34,9 +34,25 @@ export type TextSlot = {
   weight: number
   color: string
   stroke?: boolean
+  /** Which typeface this line prints in, as an id from `src/core/fonts.ts` —
+   *  `'kaiti'`, `'xingkai'`, or `user:<name>` for a file the user loaded.
+   *  Optional because every record written before the picker existed has none,
+   *  and absent means the app's own stack, which is what those records drew. */
+  family?: string
 }
 
-export type TextConfig = { slots: TextSlot[]; anchor: TextAnchor }
+export type TextConfig = {
+  slots: TextSlot[]
+  anchor: TextAnchor
+  /** Where the block sits, as a percentage of the canvas away from where its
+   *  anchor put it: `0` is the anchor's own position, `+dy` is further down.
+   *  A percentage rather than pixels so the same record means the same thing at
+   *  1× and at 2×, and optional because every record written before the 文字
+   *  panel could move a block has none — absent means centred on its anchor,
+   *  which is what those records drew. */
+  dx?: number
+  dy?: number
+}
 
 export type PlateField = 'camera' | 'focal' | 'aperture' | 'shutter' | 'iso' | 'date'
 

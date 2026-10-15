@@ -13,10 +13,12 @@ Styles are a rack of previews under the wall: each chip is a small render of the
 poster that style would make of the photograph in hand, so the mat, the backdrop
 and the canvas shape are all visible before you pick one.
 
-Words are optional and typed: the 文字 block offers exactly the slots the chosen
+Words are optional and typed: the 文字 panel offers exactly the slots the chosen
 style prints — 经典 takes a title and a subtitle, 拍立得 and 样张 a title in the
-mat, 留白 none at all — and what you type follows you from style to style. The
-camera plate needs no typing: it is read from the active photograph's own EXIF.
+mat, 留白 none at all — and what you type follows you from style to style. Each
+slot's type is yours too: its face (a list of the machine's own hands, or a font
+file you load), its size, and where the block sits on the poster. The camera
+plate needs no typing: it is read from the active photograph's own EXIF.
 
 The mount's own geometry is adjustable too. 画面 offers one slider per number the
 current template can change — 前景大小, 水平位置/垂直位置, 白边/下白边, and (on a
@@ -72,7 +74,7 @@ be served over HTTP — ES modules do not load from `file://`.
 
 | Query | Effect |
 |---|---|
-| `?dev=1` | Exposes `window.__frame`, `__frameCore`, `__frameTemplates`, `__frameCeremony`, `__frameExport` for tests and console poking |
+| `?dev=1` | Exposes `window.__frame` (the probe canvas, and `photo()` — the photograph the app is holding), `__frameCore`, `__frameTemplates`, `__frameFonts`, `__frameCeremony`, `__frameExport` for tests and console poking |
 | `?demo=1` | Loads a procedurally generated photograph into the app — no file needed to try it. A sandbox: it neither reads nor writes the session, so a reload is always the same one-photograph demo and a real session in the same browser is never touched |
 | `?demo=1&tpl=spec-sheet` | The demo photo with a named template; `?tpl` is read only alongside `?demo=1` |
 
@@ -104,8 +106,9 @@ the rules live:
 |---|---|---|
 | `src/ui/photos.ts` | `addPhotos` / `removePhoto` / `selectPhoto` / `activePhoto` — which photograph is on, after any mutation | the list rows |
 | `src/ui/rail.ts` | `styleThumb` — the preview of a style | the rack of chips |
-| `src/ui/fields.ts` | — (the slots are the template's) | the 文字 inputs |
+| `src/ui/fields.ts` | `wordsPanel` — the slots, their faces and sizes, and the ceilings | the 文字 panel |
 | `src/ui/controls.ts` | `controlSpecs` / `setControl` / `settleTemplate` — the whole write path, clamped | the sliders |
+| `src/ui/fonts.ts` | `stackOf` / `FONT_CHOICES` (in `src/core/fonts.ts`) — what a face *is* | the picker, and `FontFace` |
 | `src/ui/tabs.ts` | `tabsFor` / `inTab` / `filterRail` — which styles a collection holds | the row of collection names |
 | `src/ui/modes.ts` | `modeFor` — which panel a template can show | the switch |
 | `src/ui/history.ts` | `remember` / `undo` / `redo` — the stack and the burst rule | the two arrows |
@@ -180,17 +183,83 @@ of edits to one field is one step (700 ms, `COALESCE_MS`). The photograph list i
 not in the stack: removing a photograph drops its bytes, and offering to bring one
 back would be promising what the store no longer has.
 
+## 文字 — the words, their type, and where they sit
+
+One block per slot the template declares — the rule has not changed and should
+not: a field for a slot nothing draws is a control that accepts typing and
+changes nothing. Each block is the slot's *content*, its *face*, and its *size*,
+and above them all is the block's *position*: an anchor (顶部 / 白边 / 居中 /
+底部, with 白边 offered only where there is a band for it) and a nudge in percent
+of the canvas. The words move together, the way a paragraph does.
+
+Everything here writes the **template record**, which is what makes it one design
+rather than three features: 已调整 appears, 重置 goes back to the style as
+authored, 撤销 walks back through it, 存为模板 keeps it, and a refresh brings it
+back. The words themselves stay in `state.text`, where they have always been —
+the template chooses the typography, the user chooses the words, and 拍立得's
+handwriting face is a default rather than a lock.
+
+The sliders are bounded by `src/core/limits.ts`, from the same `textSpan` /
+`blockTop` / `textBoxHeight` the renderer lays the block out with:
+
+- **size** — each line may grow until the block, scaled *uniformly*, would fill
+  the room its anchor leaves. Uniform on purpose: a ceiling solved per slot
+  against the others would move whenever a *different* slider moved.
+- **nudge** — until the block's own box meets a canvas edge. Horizontally that is
+  only ±7%: a line is fitted to 86% of the canvas, so there is not much else to
+  move into. A poster whose words are halfway off it is not a poster.
+
+The block's box — the first line's ascent, the baselines, the last line's descent
+— is what the room is measured against, and not the baseline-to-baseline span: a
+span is zero for a single line, and a single line half the canvas tall on a 150px
+band is exactly the case a ceiling exists for.
+
+## The fonts
+
+Faces come from two places, both optional and neither downloading anything on
+its own:
+
+- **The presets** (`src/core/fonts.ts`) are already on the machine — 楷体, 宋体,
+  行楷, 手写体, 圆体, 隶书, and the Latin scripts (Snell Roundhand, Savoye,
+  Zapfino, Copperplate). Each carries a stack that ends in the app's own sans, so
+  a template opened on a machine that has none of them prints the words in this
+  app's face rather than in whatever `cursive` means there. A record stores an
+  **id**, never a CSS string: a stack in a stored record is a font nobody can
+  rename, retarget or list.
+- **Your own**, loaded from a file (`.ttf` / `.otf` / `.woff` / `.woff2`) with the
+  ＋ on the slot you want it for. The bytes go into the same IndexedDB database as
+  the photographs — the only place this app has to put bytes — and the face is
+  registered again on the next visit, so a poster set in a font you brought comes
+  back in it. The name is the file's stem: a browser cannot read a font's internal
+  family name without parsing the file, and the name you can recognise is the one
+  you typed.
+
+`FontFace` and the store are `src/ui/fonts.ts`; the id → stack table is
+`src/core/fonts.ts`, because `drawText` needs it and `src/core/` never imports
+from `src/ui/`.
+
+**A canvas never asks for a face.** It draws with whatever is in
+`document.fonts` at that instant, and it does not re-render itself when a font
+lands — so the app asks on its behalf (`resolveFonts` in `main.ts`: one
+`document.fonts.load` per face the poster can use, then a redraw). Without that,
+a session restored off the record was *drawn before the browser had fetched the
+app's own woff2 faces* and stayed in the fallback: the plate and the words came
+out in Menlo, and an export taken straight after a refresh kept it. The bug was
+always there; a poster whose type is now a feature made it worth finding.
+
 ## What this app stores, and where
 
-Four things are kept on the device. Three are `localStorage` keys and one is an
-IndexedDB database; all of them are per-origin, and none of them is a server's.
+Five things are kept on the device. Three are `localStorage` keys, and two live
+in one IndexedDB database; all of them are per-origin, and none of them is a
+server's.
 
 | what | where | kept in `src/` |
 |---|---|---|
 | the theme | `localStorage` `frame-app-theme` | the head script in `index.html`, `src/ui/theme.ts` |
 | saved templates (存为模板) | `localStorage` `frame-app-custom-v1` | `src/ui/custom.ts` |
 | the session: the photographs, which one is on the wall, the mount, the words, the numbers | `localStorage` `frame-app-session-v1` | `src/ui/session.ts` |
-| the photographs' own bytes | IndexedDB `frame-app-photos` | `src/ui/session.ts` |
+| the photographs' own bytes | IndexedDB `frame-app-photos` (store `photos`) | `src/ui/session.ts` |
+| the fonts you loaded | IndexedDB `frame-app-photos` (store `fonts`, keyed by name) | `src/ui/session.ts`, `src/ui/fonts.ts` |
 
 The session is two stores because it holds two sizes of thing: the *record* is a
 few hundred bytes of JSON, read synchronously before the first paint so the app
@@ -270,12 +339,14 @@ that, and both are load-bearing:
   虚化 slider there would accept a drag and change nothing, which is the failure
   文字 already refuses for 留白.
 
-The panel's heading carries its two actions. 重置 puts the mount back to the
-numbers as authored — the gesture that used to be a second click on the chip
-already selected, which is now what opens this panel — and is live only while
-已调整 is showing. 存为模板 keeps them under a name. Both belong here rather than
-beside 保存, because they act on the numbers *in* the panel; that is also why 保存
-is alone in the dock's top row on a desk and alone in the bar on a phone.
+The panel's heading used to carry its two actions; they live in the row above both
+panels now (`#record-acts`), because they act on the whole *record* — the mount's
+numbers and the words' type — and a 重置 that disappeared with the panel you were
+not looking at would be a button that moves when you need it. 重置 puts the mount
+back to the numbers as authored — the gesture that used to be a second click on
+the chip already selected, which is now what opens this panel — and is live only
+while 已调整 is showing. 存为模板 keeps them under a name. That is also why 保存 is
+alone in the dock's top row on a desk and alone in the bar on a phone.
 
 ## Known limitations
 

@@ -34,7 +34,15 @@ import type { Photo, Template, TextSlotId } from '../core/types'
 const KEY = 'frame-app-session-v1'
 const DB = 'frame-app-photos'
 const STORE = 'photos'
-const DB_VERSION = 1
+/** The fonts the user loaded, in the same database as the photographs.
+ *
+ *  They are the same kind of thing — tens of kilobytes of bytes the record
+ *  refers to by name, with no server anywhere — and one database is one
+ *  upgrade to write. v2 added this store; `open` walks existing databases up to
+ *  it, and its own retry covers the case where the version moved without the
+ *  store appearing. */
+const FONTS = 'fonts'
+const DB_VERSION = 2
 
 /**
  * How many photographs are kept for the next visit, and how much disk they may
@@ -229,6 +237,7 @@ function open(version: number = DB_VERSION, retried = false): Promise<IDBDatabas
       request.onupgradeneeded = () => {
         const db = request.result
         if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: 'key' })
+        if (!db.objectStoreNames.contains(FONTS)) db.createObjectStore(FONTS)
       }
       request.onsuccess = () => {
         const db = request.result
@@ -425,4 +434,72 @@ export function restoredActive(at: number[], want: number): number {
  *  of saying "this one does not come back". */
 export function forgetKey(photo: Photo): void {
   stored.delete(photo)
+}
+
+/* -------------------------------------------------------------------------- */
+/* the fonts                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The typefaces the user brought with them, under the same database as the
+ * photographs and for the same reason: it is the only place this app has to put
+ * bytes, and there is no server.
+ *
+ * The store is keyed by the font's *name* — the family `FontFace` registers and
+ * the name a record's `family` field carries inside `user:` — and its value is
+ * the file's `ArrayBuffer`. `fontNames` reads only the keys, which is what makes
+ * the picker cheap: a name costs a few bytes where the face behind it is a whole
+ * typeface, so the list can be built on every boot and the bytes read only when
+ * a record actually asks for that font.
+ *
+ * A loaded font is a font: nothing caps it and nothing expires it, and the user
+ * removes it with the same control that loaded it. That is the difference
+ * between this and the photograph store next door — photographs are a working
+ * folder with a size cap, and a typeface somebody chose is closer to a saved
+ * template: theirs, and kept until they say otherwise.
+ */
+export async function fontNames(): Promise<string[]> {
+  const d = await database()
+  if (!d) return []
+  try {
+    const keys = await ask(d.transaction(FONTS, 'readonly').objectStore(FONTS).getAllKeys())
+    return keys.map(String).sort((a, b) => a.localeCompare(b))
+  } catch {
+    return []
+  }
+}
+
+/** One loaded font's bytes, or null — no database, no such name, a refused read.
+ *  The caller's answer to null is a fallback stack, not an error. */
+export async function fontBytes(name: string): Promise<ArrayBuffer | null> {
+  const d = await database()
+  if (!d) return null
+  try {
+    const row = await ask(d.transaction(FONTS, 'readonly').objectStore(FONTS).get(name))
+    return row instanceof ArrayBuffer ? row : null
+  } catch {
+    return null
+  }
+}
+
+export async function putFont(name: string, bytes: ArrayBuffer): Promise<boolean> {
+  const d = await database()
+  if (!d) return false
+  try {
+    await ask(d.transaction(FONTS, 'readwrite').objectStore(FONTS).put(bytes, name))
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function dropFont(name: string): Promise<void> {
+  const d = await database()
+  if (!d) return
+  try {
+    await ask(d.transaction(FONTS, 'readwrite').objectStore(FONTS).delete(name))
+  } catch {
+    // The same reading as a refused delete next door: the bytes stay, nothing
+    // refers to them, and the browser reclaims them with the origin.
+  }
 }

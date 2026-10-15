@@ -155,8 +155,8 @@ test.describe('the panel switch', () => {
     await page.goto('/')
     await load(page)
 
-    await page.locator('.ctl-range').first().fill('40')
-    await expect(page.locator('#controls')).toHaveAttribute('data-adjusted', 'true')
+    await page.locator('#control-row .ctl-range').first().fill('40')
+    await expect(page.locator('#record-acts')).toHaveAttribute('data-adjusted', 'true')
 
     // ...off to 文字, then a press on the chip that is on: the knob drawn in the
     // middle of it is the promise this keeps
@@ -167,7 +167,7 @@ test.describe('the panel switch', () => {
     // and it did *not* re-pick the mount: the numbers the user moved are still
     // theirs, which is the thing the old gesture took away without saying so
     await expect(
-      page.locator('#controls'),
+      page.locator('#record-acts'),
       'pressing the chip that is on took the edits with it',
     ).toHaveAttribute('data-adjusted', 'true')
   })
@@ -183,18 +183,18 @@ test.describe('撤销 / 重做', () => {
     await expect(page.locator('#undo-desk')).toBeDisabled()
     await expect(page.locator('#redo-desk')).toBeDisabled()
 
-    await page.locator('.ctl-range').first().fill('40')
-    await expect(page.locator('#controls')).toHaveAttribute('data-adjusted', 'true')
+    await page.locator('#control-row .ctl-range').first().fill('40')
+    await expect(page.locator('#record-acts')).toHaveAttribute('data-adjusted', 'true')
     await expect(page.locator('#undo-desk')).toBeEnabled()
 
     await page.click('#undo-desk')
-    await expect(page.locator('#controls')).toHaveAttribute('data-adjusted', 'false')
+    await expect(page.locator('#record-acts')).toHaveAttribute('data-adjusted', 'false')
     expect(await digest(page), '撤销 did not put the poster back').toBe(bare)
     await expect(page.locator('#undo-desk')).toBeDisabled()
     await expect(page.locator('#redo-desk')).toBeEnabled()
 
     await page.click('#redo-desk')
-    await expect(page.locator('#controls')).toHaveAttribute('data-adjusted', 'true')
+    await expect(page.locator('#record-acts')).toHaveAttribute('data-adjusted', 'true')
     expect(await digest(page), '重做 did not put the edit back').not.toBe(bare)
   })
 

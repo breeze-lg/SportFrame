@@ -180,6 +180,22 @@
          top of the right column, under 保存. -->
     <div class="modes" id="modes" role="group" aria-label="调整面板"></div>
 
+    <!-- 记录级的两个动作 —— 重置与存为模板管的是**整个记录**（画框 + 文字排版），
+         不是画框一块，所以它们不归任何一个面板，也就不会被"一次只显示一块"藏起来：
+         在文字面板里改完字号，重置必须在手边。已调整 由这一行自己的 `data-adjusted`
+         驱动（见 `paintAdjusted`），`app.css` 只认那个属性。 -->
+    <div class="record-acts" id="record-acts" data-adjusted="false">
+      <span class="ctl-note">已调整</span>
+      <button class="btn btn-small" id="mount-reset" type="button" title="回到这个样式原本的数字">重置</button>
+      <button class="btn btn-small" id="saveTpl" type="button">存为模板</button>
+    </div>
+    <!-- The font file picker, `hidden` and opened by the 文字 panel's ＋ button:
+         which slot the font is for is known there, so the button carries it and
+         this element stays a plain input the browser can drive. In the dock
+         rather than in `.photos`, where the other input lives: a photo is a
+         document and a font is part of the poster's typography. -->
+    <input type="file" id="font-file" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" hidden>
+
     <div class="panels" id="panels" data-mode="frame">
       <!-- 文字 — one input per slot the current template prints (see
            `src/ui/fields.ts`). The row is built by the picker, not written here,
@@ -198,19 +214,12 @@
            can change (see `src/ui/controls.ts`). Same construction and the same
            rule as 文字: the rows are the template's, not a fixed board, so 样张's
            solid background gets no 后景 row rather than a slider that moves
-           nothing.
-           Its two actions live in its heading, where the numbers they act on
-           are: 重置, which is the mount as authored — the gesture re-picking a
-           chip used to be, and no longer is, because picking the chip you are
-           on opens this panel — and 存为模板, which keeps these numbers under a
-           name. 已调整 is shown by `data-adjusted` alone. -->
-      <div class="controls" id="controls" data-adjusted="false">
-        <div class="rail-h">
-          <b>画面</b>
-          <span class="ctl-note">已调整</span>
-          <button class="btn btn-small" id="mount-reset" type="button" title="回到这个样式原本的数字">重置</button>
-          <button class="btn btn-small" id="saveTpl" type="button">存为模板</button>
-        </div>
+           nothing. Its two actions used to live in this heading; they are in the
+           row above now, with the words' typography as well as these numbers.
+           The block sets its own `display`, so it needs its own `[hidden]` rule
+           for the reason `.fields` and `.plaque-row` do. -->
+      <div class="controls" id="controls">
+        <div class="rail-h"><b>画面</b></div>
         <div class="ctl-row" id="control-row"></div>
       </div>
     </div>
