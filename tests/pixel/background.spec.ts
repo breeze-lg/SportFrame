@@ -7,17 +7,26 @@ test.beforeEach(async ({ page }) => {
   await page.waitForFunction(() => '__frame' in window)
 })
 
-test('solid mode fills the requested colour', async ({ page }) => {
-  const px = await page.evaluate(async () => {
+test('无照片 with a sheet is that sheet; without one the wall is the app slate', async ({ page }) => {
+  // 样张's authored `color` — the one record that has a sheet, because its plate
+  // is printed on it.
+  const filled = await page.evaluate(async () => {
     const f = (window as any).__frame
+    const img = new Image()
+    await new Promise((res, rej) => {
+      img.onload = res
+      img.onerror = rej
+      img.src = '/sample/sample.webp'
+    })
+    const photo = { el: img, width: img.naturalWidth, height: img.naturalHeight }
+    const { drawBackground } = (window as any).__frameCore
     f.setSize(200, 200)
     const ctx = f.ctx()
     ctx.clearRect(0, 0, 200, 200)
-    const { drawBackground } = (window as any).__frameCore
-    drawBackground(ctx, { W: 200, H: 200 }, { mode: 'solid', color: '#102030' }, null, 1)
-    return f.pixel(100, 100)
+    drawBackground(ctx, { W: 200, H: 200 }, { mode: 'none', color: '#FFFFFF' }, photo, 1)
+    return f.pixel(100, 100).slice(0, 3)
   })
-  expect(px.slice(0, 3)).toEqual([16, 32, 48])
+  expect(filled).toEqual([255, 255, 255])
 })
 
 test('an empty canvas with no photo paints #2a3238', async ({ page }) => {

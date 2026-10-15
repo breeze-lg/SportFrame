@@ -66,10 +66,10 @@ test('the panel is one block per slot the template prints, each named', async ({
   await expect(page.locator('.font-pick')).toHaveCount(2)
 
   // 白边 is offered only where there is a band for it: 经典 has no mat, 拍立得 has one
-  expect(await page.locator('.anchor').allTextContents()).toEqual(['顶部', '居中', '底部'])
+  expect(await page.locator('#fields .seg-btn').allTextContents()).toEqual(['顶部', '居中', '底部'])
   await chip(page, '拍立得').click()
   await words(page)
-  expect(await page.locator('.anchor').allTextContents()).toEqual(['顶部', '白边', '居中', '底部'])
+  expect(await page.locator('#fields .seg-btn').allTextContents()).toEqual(['顶部', '白边', '居中', '底部'])
 
   // ...and 留白 declares no typography at all, so there is no panel to open: its
   // 文字 button is disabled rather than live and inert
@@ -85,7 +85,7 @@ test('the block moves: an anchor, and a nudge', async ({ page }) => {
   await page.locator('#fields .field[aria-label="主标题"]').fill('夜航')
   const atBottom = await digest(page)
 
-  await page.locator('.anchor', { hasText: '居中' }).click()
+  await page.locator('#fields .seg-btn', { hasText: '居中' }).click()
   expect(await digest(page), 'the anchor did not move the block').not.toBe(atBottom)
   expect(await textOf(page)).toMatchObject({ anchor: 'center' })
 
@@ -104,7 +104,7 @@ test('the block moves: an anchor, and a nudge', async ({ page }) => {
   await expect(page.locator('.photo-list .ph')).toHaveCount(1)
   await words(page)
   expect(await textOf(page)).toMatchObject({ anchor: 'center', dx: max })
-  await expect(page.locator('.anchor.on')).toHaveText('居中')
+  await expect(page.locator('#fields .seg-btn.on')).toHaveText('居中')
 })
 
 test('a size the panel offers always fits the poster it is drawn on', async ({ page }) => {

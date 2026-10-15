@@ -49,15 +49,25 @@ export function validateTemplate(t: unknown): Validation {
   }
 
   const bg = o.background as Record<string, unknown> | undefined
-  if (!bg || !['blur', 'solid', 'none'].includes(bg.mode as string)) {
+  if (!bg || !['blur', 'none', 'mount'].includes(bg.mode as string)) {
     return { ok: false, error: 'invalid background mode' }
   }
-  // optional: a `solid` template legitimately omits all three
+  // optional: a `none` template legitimately omits all three
   for (const key of ['blur', 'darken', 'zoom']) {
     const v = bg[key]
     if (v === undefined) continue
     if (typeof v !== 'number') return { ok: false, error: `background.${key} must be a number` }
     if (!Number.isFinite(v)) return { ok: false, error: `background.${key} must be finite` }
+  }
+  // The sheet 样张 lays its photograph on, and the one place `color` is read. A
+  // control never writes it; refused rather than repaired when it is not
+  // `#rrggbb`, because `fillStyle` *ignores* a value it cannot parse and keeps the
+  // last one — an unvalidated colour is a poster silently painted in whatever was
+  // set before it.
+  if (bg.color !== undefined) {
+    if (typeof bg.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(bg.color)) {
+      return { ok: false, error: 'background.color must be #rrggbb' }
+    }
   }
 
   const f = o.frame as Record<string, unknown> | undefined
@@ -75,6 +85,13 @@ export function validateTemplate(t: unknown): Validation {
     if (v === undefined) continue
     if (typeof v !== 'number') return { ok: false, error: `frame.${key} must be a number` }
     if (!Number.isFinite(v)) return { ok: false, error: `frame.${key} must be finite` }
+  }
+  // 白边's surface. Optional like the offsets — every record written before it
+  // existed has no such field and means paper white — but a *present* value has to
+  // be a boolean, because `render` reads it as `matBlur && backgroundSource`: a
+  // string `'false'` would draw the blurred border it says it is not.
+  if (f.matBlur !== undefined && typeof f.matBlur !== 'boolean') {
+    return { ok: false, error: 'frame.matBlur must be a boolean' }
   }
 
   if (o.text !== undefined) {
@@ -253,7 +270,7 @@ export const TEMPLATES: Template[] = [
     premium: true,
     layout: { kind: 'single' },
     canvas: { ratio: '4:5' },
-    background: { mode: 'solid', color: '#FFFFFF' },
+    background: { mode: 'none', color: '#FFFFFF' },
     // `scale` is not free: `matRect` grows the frame by `mat` on three sides and
     // by `mat + matBottom` below, so the card fits its canvas only while
     // `mat + matBottom ≤ H·(1 - scale/100)/2`. This template carries the deepest

@@ -42,10 +42,17 @@ import {
 } from './ui/photos'
 import {
   controlSpecs,
+  matFillPanel,
+  renderBackgroundModes,
   renderControls,
+  renderMatFill,
+  setBackgroundMode,
   setControl,
+  setMatBlur,
   settleTemplate,
   syncControls,
+  syncMatFill,
+  type BackgroundMode,
   type ControlContext,
   type ControlId,
 } from './ui/controls'
@@ -74,6 +81,7 @@ import {
   showCeremony,
   blobToDataUrl,
   renderToCanvas,
+  deliverySize,
   fitsCanvas,
   stamp,
 } from './ui/export'
@@ -160,8 +168,13 @@ function draw(): void {
   // `width` attribute, which is what releases the guard above and reveals the
   // canvas. A `style.width` here would leave it hidden with the poster already
   // drawn inside it.
-  cv.width = size.W
-  cv.height = size.H
+  //
+  // The *delivery* size, not the canvas: in 无照片 the poster is the mount's own
+  // box, so the preview is that box — what you see is what the file is. `render`
+  // is still handed `size`, and translates the window onto the card itself.
+  const delivery = deliverySize(size, template, photo)
+  cv.width = delivery.W
+  cv.height = delivery.H
 
   render({
     ctx,
@@ -274,15 +287,7 @@ function paintRail(activeId: string | null): void {
   renderTabs(tabsEl, tabs, state.tab, onTab)
 
   const t = state.template
-  const info = document.getElementById('rail-info')
-  if (info) {
-    // The poster's own size, not the file's: `state.size` is the 1× canvas and
-    // the export doubles it, so a readout in export pixels would state a number
-    // that appears nowhere on screen.
-    const size = t ? canvasSize(t) : null
-    info.textContent = t && size ? `${t.name} · ${size.W}×${size.H}` : ''
-  }
-
+  paintInfo()
   // The caption under the poster: which mount is on, and the line the template
   // carries saying what it does to a photograph. A style with no tagline — a
   // copy saved before the field existed, or one of the user's own — says its
@@ -290,6 +295,22 @@ function paintRail(activeId: string | null): void {
   capName.textContent = t?.name ?? ''
   capTag.textContent = t?.tagline ?? ''
   posterCap.hidden = !t
+}
+
+/**
+ * The line beside the rack: which mount is on, and the size of the poster it makes.
+ *
+ * The size is the *delivery* size — the canvas for every mode but 无照片, which
+ * delivers the mount's own box — so it is repainted whenever the mode changes, and
+ * not only when the rail does. A readout still saying 1152×1440 beside a card
+ * cropped to 769×1058 would be the app describing a file it is not about to write.
+ */
+function paintInfo(): void {
+  const info = document.getElementById('rail-info')
+  if (!info) return
+  const t = state.template
+  const size = t ? deliverySize(canvasSize(t), t, activePhoto(state)) : null
+  info.textContent = t && size ? `${t.name} · ${size.W}×${size.H}` : ''
 }
 
 /** The collections row. A tab changes what the rack shows and nothing else:
@@ -593,6 +614,8 @@ function paintFields(): void {
  */
 const controlBox = document.getElementById('controls') as HTMLElement
 const controlHost = document.getElementById('control-row') as HTMLElement
+const modeHost = document.getElementById('control-modes') as HTMLElement
+const matHost = document.getElementById('control-mat') as HTMLElement
 
 /**
  * What the panel measures its ceilings against: the canvas the wall is drawn
@@ -646,8 +669,56 @@ function paintControls(): void {
   const t = state.template
   controlBox.hidden = !t
   if (!t) return
+  // The choice first, then the rows it decides the existence of: 背景 无照片 takes
+  // the three 后景 sliders away, so the panel is driven from the mode rather than
+  // merely synced.
+  renderBackgroundModes(modeHost, t.background.mode, onBackgroundMode)
+  renderMatFill(matHost, matFillPanel(t), onMatBlur)
   renderControls(controlHost, controlSpecs(t, controlContext(t)), onControl)
   paintAdjusted(t)
+}
+
+/**
+ * 白边 in white, or in the photograph itself.
+ *
+ * A record write like the mode next door, and for the same reason it rebuilds the
+ * panel rather than syncing it: the row's own `on` state is part of what changed,
+ * and a click cannot be partway through a drag.
+ */
+function onMatBlur(on: boolean): void {
+  const t = state.template
+  if (!t) return
+  const next = setMatBlur(t, on, controlContext(t))
+  if (next === t) return
+  rememberStep('mat-blur')
+  state.template = next
+  paintControls()
+  draw()
+  persistSession()
+}
+
+/**
+ * 虚化 / 无照片 — is the photograph itself in the background, or not. The write is
+ * `setBackgroundMode`'s, and everything after it is bookkeeping, exactly as in
+ * `onControl` next door … with one difference: the rows have to be *rebuilt*
+ * rather than synced, because the mode is what decides whether the three 后景
+ * numbers exist. A rebuild during a drag would lose the pointer, and a click
+ * cannot be partway through one — which is why the choice can afford it and the
+ * sliders cannot.
+ */
+function onBackgroundMode(mode: BackgroundMode): void {
+  const t = state.template
+  if (!t) return
+  const next = setBackgroundMode(t, mode, controlContext(t))
+  if (next === t) return
+  rememberStep('background')
+  state.template = next
+  paintControls()
+  // The delivery size moved with the mode, so the line beside the rack has to move
+  // with it — that readout is the size of the file.
+  paintInfo()
+  draw()
+  persistSession()
 }
 
 /**
@@ -669,6 +740,10 @@ function onControl(id: ControlId, raw: number): void {
   rememberStep(`frame:${id}`)
   state.template = next
   syncControls(controlHost, controlSpecs(next, controlContext(next)))
+  // ...and the one thing in the panel that is not a slider and still depends on
+  // them: whether there is a border for 白边 to fill. Synced, never rebuilt — this
+  // runs on every tick of a drag.
+  syncMatFill(matHost, matFillPanel(next).enabled)
   paintAdjusted(next)
   draw()
   persistSession()
@@ -1084,10 +1159,11 @@ async function savePoster(): Promise<void> {
     if (!isIOS()) download(blob, filename)
 
     const dataUrl = await blobToDataUrl(blob)
+    const delivery = deliverySize(state.size, template, photo)
     showCeremony(
       dataUrl,
-      state.size.W * k,
-      state.size.H * k,
+      delivery.W * k,
+      delivery.H * k,
       () => void draw(),
       isIOS() ? '长按图片存储到相册' : undefined,
     )

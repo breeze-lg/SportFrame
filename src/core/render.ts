@@ -1,6 +1,6 @@
-import { drawBackground } from './background'
+import { drawBackground, outputOrigin } from './background'
 import { aspectOf, cover, fitRect, matRect } from './geometry'
-import { drawMat, roundedRect } from './mat'
+import { drawMat, drawBlurredMat, blurWidth, roundedRect } from './mat'
 import { drawPlate } from './plate'
 import { drawText } from './text'
 import type { RenderInput, Rect } from './types'
@@ -17,6 +17,23 @@ export function render(input: RenderInput): void {
   const backgroundSource = photo
     ? { el: photo.preview ?? photo.el, width: photo.width, height: photo.height }
     : null
+
+  // The aspect the mount is laid out with. `aspectOf` reads the photograph only
+  // for the `orig` ratio; with no photograph there is no mount and no crop, so the
+  // 0 is never read.
+  const aspect = photo ? aspectOf(template.canvas.ratio, photo) : 0
+
+  // 无照片 is delivered as the mount's own box: the same layout — `size` is never
+  // touched, so every measurement below still happens against the template's
+  // canvas — seen through a window that has been translated onto the card. The
+  // translation is the whole of the crop: the caller sizes the canvas to
+  // `outputRect`, and both come from one function, so a preview cannot show a card
+  // while the file carries a field around it.
+  if (photo) {
+    const origin = outputOrigin(size, template, aspect)
+    ctx.translate(origin.x * k, origin.y * k)
+  }
+
   drawBackground(ctx, size, template.background, backgroundSource, k)
 
   // The spine draws in device pixels: `size` is logical and `k` is the scale
@@ -27,7 +44,6 @@ export function render(input: RenderInput): void {
   let frame: Rect | null = null
 
   if (photo) {
-    const aspect = aspectOf(template.canvas.ratio, photo)
     // The offsets are the 画面 panel's 水平位置/垂直位置. They were always
     // `fitRect`'s parameters and never anything else's business — the renderer
     // passed 0,0 and nobody could move a photograph off centre. They stay
@@ -43,20 +59,31 @@ export function render(input: RenderInput): void {
 
     const mat = matRect(frame, template.frame.mat, template.frame.matBottom, k)
     const inset = 1 * k
-    drawMat(
-      ctx,
-      {
-        x: mat.x + inset,
-        y: mat.y + inset,
-        w: Math.max(1, mat.w - inset * 2),
-        h: Math.max(1, mat.h - inset * 2),
-      },
-      // logical units — `drawMat` multiplies the radius by k itself — and the
-      // 1 is the same 1px inset above, before that scaling
-      Math.max(0, template.frame.radius + template.frame.mat - 1),
-      template.frame.shadow,
-      k,
-    )
+    const card = {
+      x: mat.x + inset,
+      y: mat.y + inset,
+      w: Math.max(1, mat.w - inset * 2),
+      h: Math.max(1, mat.h - inset * 2),
+    }
+    // logical units — `drawMat` multiplies the radius by k itself — and the 1 is
+    // the same 1px inset above, before that scaling
+    const cardRadius = Math.max(0, template.frame.radius + template.frame.mat - 1)
+    if (template.frame.matBlur && backgroundSource) {
+      // 白边 in the photograph rather than in white: the border is the picture
+      // itself, blurred, bleeding past its own edge. `blurWidth` scales with the
+      // border, because the number the record carries is its width.
+      drawBlurredMat(
+        ctx,
+        card,
+        cardRadius,
+        template.frame.shadow,
+        backgroundSource,
+        blurWidth(template.frame.mat, template.frame.matBottom, k),
+        k,
+      )
+    } else {
+      drawMat(ctx, card, cardRadius, template.frame.shadow, k)
+    }
 
     // photo, clipped to its rounded rect and drawn 1px oversized so the clip
     // can never reveal a seam. `preview` is the downscale for on-screen

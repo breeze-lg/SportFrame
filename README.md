@@ -20,10 +20,14 @@ slot's type is yours too: its face (a list of the machine's own hands, or a font
 file you load), its size, and where the block sits on the poster. The camera
 plate needs no typing: it is read from the active photograph's own EXIF.
 
-The mount's own geometry is adjustable too. 画面 offers one slider per number the
-current template can change — 前景大小, 水平位置/垂直位置, 白边/下白边, and (on a
-blurred background) 后景放大/虚化/压暗 — and 存为模板 keeps the numbers you set,
-so a look you tuned is a style you can pick again. The sliders cannot be driven
+The mount's own geometry is adjustable too. 画面 opens with one choice — what is
+painted behind the photograph (带背景 / 透明 / 无照片, see below) — and then offers one
+slider per number the current template can change: 前景大小, 水平位置/垂直位置,
+白边/下白边, and, where there is a photograph behind the frame, 后景放大 /
+后景虚化 / 后景压暗. (无照片 delivers the mount's own box, so it offers the two mat
+numbers and nothing else, and 透明 and 无照片 both offer 白边's own surface — paper or
+the photograph. See below.) 存为模板 keeps the numbers you set, so a look
+you tuned is a style you can pick again. The sliders cannot be driven
 into a poster the renderer would crop: every maximum is the layout's own ceiling,
 computed in `src/core/limits.ts`. Nothing you change there is saved until you
 press 存为模板; the note beside the heading says 已调整 until you do, and 重置
@@ -107,7 +111,7 @@ the rules live:
 | `src/ui/photos.ts` | `addPhotos` / `removePhoto` / `selectPhoto` / `activePhoto` — which photograph is on, after any mutation | the list rows |
 | `src/ui/rail.ts` | `styleThumb` — the preview of a style | the rack of chips |
 | `src/ui/fields.ts` | `wordsPanel` — the slots, their faces and sizes, and the ceilings | the 文字 panel |
-| `src/ui/controls.ts` | `controlSpecs` / `setControl` / `settleTemplate` — the whole write path, clamped | the sliders |
+| `src/ui/controls.ts` | `controlSpecs` / `setControl` / `settleTemplate` — the whole write path, clamped; `setBackgroundMode` — 背景; `setMatBlur` / `matFillPanel` — 白边's surface | the sliders, the 背景 and 白边 rows |
 | `src/ui/fonts.ts` | `stackOf` / `FONT_CHOICES` (in `src/core/fonts.ts`) — what a face *is* | the picker, and `FontFace` |
 | `src/ui/tabs.ts` | `tabsFor` / `inTab` / `filterRail` — which styles a collection holds | the row of collection names |
 | `src/ui/modes.ts` | `modeFor` — which panel a template can show | the switch |
@@ -247,7 +251,43 @@ app's own woff2 faces* and stayed in the fallback: the plate and the words came
 out in Menlo, and an export taken straight after a refresh kept it. The bug was
 always there; a poster whose type is now a feature made it worth finding.
 
-## What this app stores, and where
+## 白边 — paper, or the photograph
+
+In 透明 and 无照片 the border is the whole background the poster has, so 画面 offers
+what it is made of, under the 白边 heading:
+
+| | the border is |
+|---|---|
+| 白 | the mat, white — what every template ships with |
+| 模糊 | the photograph itself, blurred, bleeding past its own frame |
+
+The blurred border is drawn as a *cover-crop of the picture into the card* — so what
+shows in the border is the part of the photograph just outside the frame, which is
+what makes it read as the picture running past its edge rather than as a frame with a
+colour in it — then clipped to the card's rounded shape. It is padded as well as
+clipped, for the reason the backdrop is: a blur pulls colour in from beyond the rect
+it is given, and a card-sized bitmap blurred by a border-sized amount has its outer
+edge fading into transparency, which composites with the white underneath and leaves
+a pale rim where the border should be.
+
+The blur amount comes from the border's own width (`blurWidth`: 0.8× the widest
+side, floor 12) rather than from a slider of its own. The record has one number for
+a border and it is the width; the wider it is, the more the blur has to hide. A 16px
+mat gets the picture, softened; a 104px band gets a colour the picture is made of.
+
+Two rules about where it is offered:
+
+- **Only in 透明 and 无照片.** On 带背景's blurred backdrop the same blur is a border
+  nobody can see — the failure this panel refuses everywhere else.
+- **Only where there is a border to fill.** With 白边 at 0 the row is drawn *disabled*
+  rather than hidden, and `syncMatFill` turns it live from the slider's own write
+  path: raising 白边 from 0 is a drag, and a row rebuilt under a drag loses the
+  pointer.
+
+`frame.matBlur` is a record field like any other — 已调整, 重置, 撤销, 存为模板, and a
+refresh all see it — and it survives a trip through 带背景, where the row is not
+drawn and the flag simply waits.
+
 
 Five things are kept on the device. Three are `localStorage` keys, and two live
 in one IndexedDB database; all of them are per-origin, and none of them is a
@@ -335,9 +375,70 @@ that, and both are load-bearing:
 - Raising one control never moves another *except* the offsets, which have less
   room as the photograph grows — so a write settles the frame afterwards rather
   than clamping only what the user touched.
-- 后景 is not offered where there is no 后景. 样张 paints a flat white card, so a
-  虚化 slider there would accept a drag and change nothing, which is the failure
-  文字 already refuses for 留白.
+- 后景 is not offered where there is no 后景. 样张 paints a flat sheet, and 透明 and
+  无照片 draw nothing behind the photograph at all, so a 后景虚化 slider in any of
+  them would accept a drag and change nothing — the failure 文字 already refuses for
+  留白.
+
+## 背景 — three sizes of poster
+
+Above the sliders, 画面 opens with one choice rather than a number, and it is
+really a choice about *what the poster is* — which decides both what is drawn and
+how big the file is:
+
+| | what it is | what it delivers |
+|---|---|---|
+| 带背景 | the photograph again, cover-cropped and out of focus, on a canvas of the template's own shape | 1152×1440 for a 4:5 template at this long edge |
+| 透明 | nothing behind the photograph, on that same canvas | 1152×1440, with an empty background |
+| 无照片 | no canvas to speak of: the poster is the mount — the photograph and its border | **the mount's own box**: a 1000×1000 poster whose photograph and border measure 800×800 is written at 800×800 |
+
+The mode is a property of the record, so the choice is a record write like any
+slider's: 已调整 appears, 重置 goes back to the style as authored, 撤销 walks back
+through it, 存为模板 keeps it, and a refresh brings it back. A round trip out to
+无照片 and back clears 已调整 on its own, because the record is back where it
+started — that is the whole of what the marker means.
+
+**One function decides every size.** `outputRect` in `src/core/background.ts` (and
+`deliverySize`, its rounding wrapper in `src/ui/export.ts`) answers with the whole
+canvas for 带背景 and 透明, and with `mountRect` — the frame grown by its mat, the
+same two functions `render` lays the mount out with — for 无照片. The screen canvas,
+the export, the area budget the export ladder walks, and the size printed beside the
+rack all ask it. A preview that showed a card while the file carried a field around
+it, or a budget computed against a canvas the file is not going to be, is the app
+lying about what it is about to write.
+
+**The crop is the whole of 无照片.** `render` never changes `size`: every
+measurement still happens against the template's canvas, and the delivery is that
+canvas seen through a window that has been translated onto the card. That is why
+the mode zeroes `ox`/`oy` on the way in — a window cannot be off-centre inside
+itself — and why 无照片 is the one mode that offers 白边/下白边 and nothing else:
+前景大小 resizes the window and 水平位置/垂直位置 move it, so none of the three can
+change the poster, while the mat *is* the poster's border and the file grows with
+it. Wanting more pixels is the export's ladder (1×/2×/4×), not a slider.
+
+**Why three, and not two or four.** 不虚化 — the same backdrop sharp — was built and
+removed: it is still "the photograph in the background", which the row does not ask
+about. 透明 and 无照片 are kept as separate answers because they are separate
+*deliveries*: one is a poster with a hole where the background was, the other does
+not have the canvas at all. `background.mode` is `'blur' | 'none' | 'mount'`, and a
+mode nothing can set is a branch nothing can reach.
+
+Three more things are load-bearing:
+
+- **One record has a sheet, and it is authored.** 样张 lays its photograph on
+  `#FFFFFF` (`background.color`), because its plate is printed on the card — a
+  camera plate set on an empty canvas is a caption floating over nothing. No control
+  writes that colour; it is part of the template the way `frame.radius` is, and it
+  survives a trip out to 带背景 and back so the card is never quietly left empty.
+  `validateTemplate` refuses a `color` that is not `#rrggbb`, because `fillStyle`
+  *ignores* a value it cannot parse and keeps the last one.
+- **The numbers survive the switch.** `blur`, `zoom` and `darken` mean nothing to
+  透明 or 无照片 — nothing is drawn there — but they are what 带背景 is made of, and
+  a user stepping out and back expects the backdrop they left, not a new one.
+- **带背景 on a flat card invents a blur.** 样张 carries none, and a 带背景 that drew
+  a sharp backdrop under its own label is a control lying about what it did. The
+  default is 40 — the middle of what the built-ins authored (28–62) — rather than
+  the maximum, which would be a look nobody chose.
 
 The panel's heading used to carry its two actions; they live in the row above both
 panels now (`#record-acts`), because they act on the whole *record* — the mount's

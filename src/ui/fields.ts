@@ -248,20 +248,21 @@ export function renderFields(
     const title = document.createElement('b')
     title.textContent = '位置'
     const note = document.createElement('span')
-    note.className = 'pos-note'
+    note.className = 'h-note'
     note.textContent = '整块一起动'
     head.append(title, note)
     where.appendChild(head)
 
     // The anchor: four words, because which end of the poster the block hangs
-    // from is a choice between four places and not a number.
+    // from is a choice between four places and not a number. `.seg` is shared
+    // with 画面's 背景 row — one look for "pick one of a few", in two panels.
     const anchors = document.createElement('div')
-    anchors.className = 'anchors'
+    anchors.className = 'seg'
     anchors.setAttribute('role', 'group')
     anchors.setAttribute('aria-label', '对齐位置')
     for (const a of panel.anchors) {
       const b = document.createElement('button')
-      b.className = 'anchor' + (a.id === panel.anchor ? ' on' : '')
+      b.className = 'seg-btn' + (a.id === panel.anchor ? ' on' : '')
       b.type = 'button'
       b.textContent = a.label
       b.setAttribute('aria-pressed', a.id === panel.anchor ? 'true' : 'false')

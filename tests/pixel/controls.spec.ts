@@ -119,14 +119,253 @@ async function saveAs(page: Page, name: string): Promise<void> {
   await page.click('#saveTpl')
 }
 
+/**
+ * The record the app keeps as you work (`frame-app-session-v1`), read straight
+ * out of `localStorage`: what a reload would restore. An assertion about a
+ * record write belongs here rather than on the canvas — the canvas can be right
+ * while the thing that outlives the tab is wrong.
+ */
+async function saved(page: Page): Promise<any> {
+  return page.evaluate(() => JSON.parse(localStorage.getItem('frame-app-session-v1') ?? 'null'))
+}
+
+/** The canvas's top-left pixel, as RGB. The corner of the wall is never the
+ *  mount: `fitRect` centres it and every template leaves a margin. */
+async function corner(page: Page): Promise<number[]> {
+  return page.evaluate(() => {
+    const cv = document.querySelector('canvas#cv') as HTMLCanvasElement
+    const d = cv.getContext('2d')!.getImageData(0, 0, 1, 1).data
+    return [d[0]!, d[1]!, d[2]!]
+  })
+}
+
+/** ...and its alpha, which is what 无照片 is a claim about. */
+async function cornerAlpha(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const cv = document.querySelector('canvas#cv') as HTMLCanvasElement
+    return cv.getContext('2d')!.getImageData(0, 0, 1, 1).data[3]!
+  })
+}
+
+/**
+ * One pixel of the wall, as RGB — for asking what is at a *place* rather than what
+ * the corner is. The corner of a cropped card is its rounded corner (transparent),
+ * which says nothing about what the card is made of.
+ */
+async function pixelAt(page: Page, x: number, y: number): Promise<number[]> {
+  return page.evaluate(
+    ({ x, y }) => {
+      const cv = document.querySelector('canvas#cv') as HTMLCanvasElement
+      const d = cv.getContext('2d')!.getImageData(x, y, 1, 1).data
+      return [d[0]!, d[1]!, d[2]!]
+    },
+    { x, y },
+  )
+}
+
+test('the 背景 choice is three posters, with the one that is on marked', async ({ page }) => {
+  await page.goto('/')
+  await chip(page, '经典').click()
+  // 带背景 / 透明 / 无照片 — a canvas with the photograph on it, a canvas with
+  // nothing on it, and no canvas at all.
+  expect(await page.locator('#control-modes .seg-btn').allTextContents()).toEqual(['带背景', '透明', '无照片'])
+  expect(await page.locator('#control-modes .seg-btn.on')).toHaveText('带背景')
+  // ...and it is labelled, not just aria-labelled: 无照片 names what is *not* in
+  // the background, and under a bare 画面 heading a reader could take it for a
+  // claim about the poster.
+  expect(await page.locator('#controls .rail-h b').allTextContents()).toEqual(['画面', '背景'])
+  await page.locator('#control-modes .seg-btn[data-mode="none"]').click()
+  expect(await page.locator('#control-modes .seg-btn.on')).toHaveText('透明')
+  await page.locator('#control-modes .seg-btn[data-mode="mount"]').click()
+  expect(await page.locator('#control-modes .seg-btn.on')).toHaveText('无照片')
+})
+
+test('无照片 delivers the mount’s own box: the poster is the card', async ({ page }) => {
+  await page.goto('/')
+  await loadPhoto(page)
+  await chip(page, '拍立得').click()
+  const full = await saved(page)
+  const canvasSize = () =>
+    page.evaluate(() => {
+      const cv = document.querySelector('canvas#cv') as HTMLCanvasElement
+      return [cv.width, cv.height]
+    })
+  const before = await canvasSize()
+  // 带背景 fills the template's canvas: 1152×1440 for a 4:5 poster at this long edge.
+  expect(before).toEqual([1152, 1440])
+  expect(await corner(page)).not.toEqual([255, 255, 255])
+
+  await page.locator('#control-modes .seg-btn[data-mode="mount"]').click()
+  const after = await canvasSize()
+  // Smaller in both directions — the field around the card is the part that is not
+  // part of the file — and the crop is *tight*: 8px in from the file's own edge is
+  // already the card's white border, where 带背景 had the blurred photograph. (The
+  // very corner is the mat's rounded corner, so it is transparent; that is a corner,
+  // not a background.)
+  expect(after[0]).toBeLessThan(before[0]!)
+  expect(after[1]).toBeLessThan(before[1]!)
+  expect(await pixelAt(page, 8, 8)).toEqual([255, 255, 255])
+  // The size printed under the poster is the size of the file, not of the canvas it
+  // was laid out on.
+  expect(await page.locator('#rail-info').textContent()).toBe(`拍立得 · ${after[0]}×${after[1]}`)
+
+  // Only the two numbers that change the card are offered: 前景大小 and the offsets
+  // move or resize the *window*, and in this mode the window is the poster.
+  expect(await page.locator('#controls .ctl-name').allTextContents()).toEqual(['白边', '下白边'])
+  expect((await saved(page)).template.frame.scale).toBe(full.template.frame.scale)
+
+  // ...and 白边 still changes the poster — the file grows with the border.
+  await page.locator('#controls input[aria-label="白边"]').fill('60')
+  const wider = await canvasSize()
+  expect(wider[0]).toBe(after[0]! + 88)
+  expect(wider[1]).toBe(after[1]! + 88)
+})
+
+test('透明 draws nothing: the canvas keeps its size and loses its background', async ({ page }) => {
+  await page.goto('/')
+  await loadPhoto(page)
+  await chip(page, '经典').click()
+  const before = await saved(page)
+  expect(await cornerAlpha(page)).toBe(255)
+
+  await page.locator('#control-modes .seg-btn[data-mode="none"]').click()
+  // Nothing at all, not a colour and not a sheet: the corner of the wall is
+  // transparent, so the PNG this exports is a 1152×1440 poster with an empty
+  // background. The canvas does not shrink — that is 无照片, which is the next
+  // button along.
+  expect(await cornerAlpha(page)).toBe(0)
+  expect((await saved(page)).template.background.color).toBeUndefined()
+  expect(
+    await page.evaluate(() => {
+      const cv = document.querySelector('canvas#cv') as HTMLCanvasElement
+      return [cv.width, cv.height]
+    }),
+  ).toEqual([1152, 1440])
+
+  // ...and it is a record write like any other slider: the marker is up and the
+  // reset in the row above it is live.
+  expect(await page.locator('#record-acts').getAttribute('data-adjusted')).toBe('true')
+  expect(await page.locator('#mount-reset').isEnabled()).toBe(true)
+
+  // What the switch did *not* do: throw away the numbers the trip back needs, or
+  // touch the mount.
+  await page.locator('#control-modes .seg-btn[data-mode="blur"]').click()
+  const back = await saved(page)
+  expect(await cornerAlpha(page)).toBe(255)
+  expect(back.template.background.blur).toBe(before.template.background.blur)
+  expect(back.template.background.zoom).toBe(before.template.background.zoom)
+  expect(back.template.background.darken).toBe(before.template.background.darken)
+  expect(back.template.frame).toEqual(before.template.frame)
+
+  // Back where it started, and the app says so: the marker is the difference from
+  // the template as authored, so a round trip clears it.
+  expect(await page.locator('#record-acts').getAttribute('data-adjusted')).toBe('false')
+})
+
+test('白边 can be filled with the photograph, blurred', async ({ page }) => {
+  await page.goto('/')
+  await loadPhoto(page)
+  await chip(page, '拍立得').click()
+  // 带背景 does not offer it: the same blur on a blurred backdrop is a border nobody
+  // can see, which is the failure this panel refuses everywhere else.
+  expect(await page.locator('#control-mat .seg-btn')).toHaveCount(0)
+
+  await page.locator('#control-modes .seg-btn[data-mode="mount"]').click()
+  const fill = page.locator('#control-mat .seg-btn')
+  expect(await fill.allTextContents()).toEqual(['白', '模糊'])
+  expect(await page.locator('#control-mat .seg-btn.on')).toHaveText('白')
+  // The card's border is the mat's white, 8px in from the file's own edge.
+  expect(await pixelAt(page, 8, 8)).toEqual([255, 255, 255])
+
+  await page.locator('#control-mat .seg-btn[data-fill="blur"]').click()
+  // ...and now the border is the photograph itself, out of focus: the picture bleeds
+  // past its own frame instead of sitting on paper. Not white, and not the app's
+  // empty slate either — this is the picture.
+  const border = await pixelAt(page, 8, 8)
+  expect(border).not.toEqual([255, 255, 255])
+  expect(border).not.toEqual([42, 50, 56])
+  // A fill, not a size: the crop 无照片 delivers is untouched.
+  expect(
+    await page.evaluate(() => {
+      const cv = document.querySelector('canvas#cv') as HTMLCanvasElement
+      return [cv.width, cv.height]
+    }),
+  ).toEqual([769, 1058])
+  expect((await saved(page)).template.frame.matBlur).toBe(true)
+  expect(await page.locator('#record-acts').getAttribute('data-adjusted')).toBe('true')
+
+  // ...and 白边 puts the paper back.
+  await page.locator('#control-mat .seg-btn[data-fill="white"]').click()
+  expect(await pixelAt(page, 8, 8)).toEqual([255, 255, 255])
+})
+
+test('the 白边 row waits disabled until there is a border to fill', async ({ page }) => {
+  await page.goto('/')
+  await loadPhoto(page)
+  await chip(page, '经典').click()
+  await page.locator('#control-modes .seg-btn[data-mode="mount"]').click()
+  const fill = page.locator('#control-mat .seg-btn')
+  expect(await fill).toHaveCount(2)
+  expect(await fill.first().isDisabled()).toBe(true)
+
+  // Raising 白边 is a slider drag, so the row has to come alive *without* a rebuild —
+  // `syncMatFill` runs on the slider's own write path, beside `syncControls`.
+  await page.locator('#controls input[aria-label="白边"]').fill('40')
+  expect(await fill.first().isEnabled()).toBe(true)
+  expect(await fill.last().isEnabled()).toBe(true)
+  // ...and now choosing it draws the blurred border that was waiting.
+  await page.locator('#control-mat .seg-btn[data-fill="blur"]').click()
+  expect((await saved(page)).template.frame.matBlur).toBe(true)
+  expect(await pixelAt(page, 20, 20)).not.toEqual([255, 255, 255])
+})
+
+test('样张 keeps its white sheet: 透明 there is a card, not an empty canvas', async ({ page }) => {
+  await page.goto('/')
+  await loadPhoto(page)
+  await chip(page, '样张').click()
+  // 样张 ships as 透明 — and *with* a sheet, because its plate is printed on it.
+  // That colour is authored, not a control: a camera plate set on an empty canvas
+  // is a caption floating over nothing.
+  expect(await page.locator('#control-modes .seg-btn.on')).toHaveText('透明')
+  expect(await corner(page)).toEqual([255, 255, 255])
+  expect((await saved(page)).template.background.color).toBe('#FFFFFF')
+})
+
+test('透明 keeps no 后景 rows, and 带背景 keeps the three', async ({ page }) => {
+  await page.goto('/')
+  await chip(page, '经典').click()
+  const rows = page.locator('#controls .ctl-name')
+
+  expect(await rows.allTextContents()).toEqual([...FRAME, '后景放大', '后景虚化', '后景压暗'])
+
+  await page.locator('#control-modes .seg-btn[data-mode="none"]').click()
+  expect(await rows.allTextContents()).toEqual(FRAME)
+})
+
+test('带背景 on 样张 is a blur, not a label on a flat card', async ({ page }) => {
+  await page.goto('/')
+  await loadPhoto(page)
+  await chip(page, '样张').click()
+  expect(await page.locator('#control-modes .seg-btn.on')).toHaveText('透明')
+
+  await page.locator('#control-modes .seg-btn[data-mode="blur"]').click()
+  // Three rows appear, one of them the blur the card did not have — a 带背景 that
+  // drew a sharp backdrop under its own label would be a control lying.
+  expect(await page.locator('#controls .ctl-name').allTextContents()).toEqual([...FRAME, ...BACKDROP])
+  expect((await saved(page)).template.background.blur).toBeGreaterThan(0)
+  // ...and the authored sheet is still there underneath, for the trip back.
+  expect((await saved(page)).template.background.color).toBe('#FFFFFF')
+})
+
 test('the panel is exactly the controls the current template offers', async ({ page }) => {
   await page.goto('/')
 
   for (const t of TEMPLATES) {
     await chip(page, t.name).click()
-    // 后景 only where there is one: 样张 paints a flat white card, and a slider
-    // that accepts a drag and changes nothing is the failure 文字 already
-    // refuses for 留白.
+    // 后景 only where there is one: 无照片 draws nothing behind the photograph and
+    // 样张 ships as one, so its panel has the frame's five numbers and no 后景
+    // rows — a slider that accepts a drag and changes nothing is the failure 文字
+    // already refuses for 留白.
     const expected = t.background.mode === 'blur' ? [...FRAME, ...BACKDROP] : FRAME
     expect(await page.locator('#controls .ctl-name').allTextContents(), t.id).toEqual(expected)
   }

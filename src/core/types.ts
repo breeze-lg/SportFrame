@@ -4,10 +4,28 @@ export type Rect = { x: number; y: number; w: number; h: number }
 export type Ratio = '4:5' | '1:1' | '3:2' | '16:9' | '9:16' | 'orig'
 
 export type Background = {
-  mode: 'blur' | 'solid' | 'none'
+  /** What the poster *is*, which is one of three things:
+   *
+   *  `blur`  the photograph again, cover-cropped and out of focus, filling a
+   *          canvas of the template's own shape. The app's own look, and what
+   *          eight of the nine templates ship with.
+   *  `none`  nothing behind the photograph, on that same canvas — a poster of the
+   *          full 1152×1440 with an empty background, which is what a PNG with
+   *          alpha is for.
+   *  `mount` no canvas to speak of: the delivery is the mount's own box. A 1000×1000
+   *          poster whose photograph and border measure 800×800 is exported at
+   *          800×800 — the paper around the mount is not part of the poster, so it
+   *          is not part of the file.
+   */
+  mode: 'blur' | 'none' | 'mount'
   zoom?: number
   blur?: number
   darken?: number
+  /** The sheet the poster is printed on, if the template has one. Authored, never
+   *  a control: 样张 ships `#FFFFFF` and is the one template that has a sheet at
+   *  all, because its plate is printed on it — a camera plate set on an empty
+   *  canvas is a caption floating over nothing. Fills the canvas in `none`, and the
+   *  mount's box in `mount`, where it is the card itself. */
   color?: string
 }
 
@@ -17,6 +35,13 @@ export type Frame = {
   mat: number
   matBottom: number
   shadow: number
+  /** 白边, not in white: the mat is filled with the photograph itself, blurred, so
+   *  the picture bleeds off its own edge instead of sitting on paper. Off by default
+   *  — a mat is white unless the record says so — and offered by the 画面 panel only
+   *  in the modes where the border *is* the poster's background (透明 and 无照片):
+   *  on 带背景's blurred backdrop the same blur is a border nobody can see. Missing
+   *  means white, like every other optional field here. */
+  matBlur?: boolean
   /** How far off the canvas centre the mount sits, in `fitRect`'s own offset
    *  units: 100 is a shift of 35% of the box. Optional because every record
    *  written before the 画面 controls existed has no such field, and a missing

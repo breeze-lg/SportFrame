@@ -210,16 +210,28 @@
         <div class="field-row" id="field-row"></div>
       </div>
 
-      <!-- 画面 — the mount's own geometry, one slider per number this template
-           can change (see `src/ui/controls.ts`). Same construction and the same
-           rule as 文字: the rows are the template's, not a fixed board, so 样张's
-           solid background gets no 后景 row rather than a slider that moves
-           nothing. Its two actions used to live in this heading; they are in the
-           row above now, with the words' typography as well as these numbers.
-           The block sets its own `display`, so it needs its own `[hidden]` rule
-           for the reason `.fields` and `.plaque-row` do. -->
+      <!-- 画面 — the mount's own geometry: one choice (背景: is the photograph in
+           the background or not) above one slider per number this template can
+           change (see `src/ui/controls.ts`). Same construction and the same rule
+           as 文字: the rows are the template's, not a fixed board, so 无照片 gets a
+           底色 row and no 后景 rows rather than sliders that move nothing. Its two
+           actions used to live in this heading; they are in the row above now, with
+           the words' typography as well as these numbers. The block sets its own
+           `display`, so it needs its own `[hidden]` rule for the reason `.fields`
+           and `.plaque-row` do. -->
       <div class="controls" id="controls">
         <div class="rail-h"><b>画面</b></div>
+        <!-- The 背景 heading is visible, not just an `aria-label`, and that is not
+             decoration: 无照片 names what is *not* in the background, and a user
+             reading it under a bare 画面 heading could take it for a claim about
+             the poster. Under 背景 it can only mean the one thing it means. -->
+        <div class="rail-h"><b>背景</b></div>
+        <div class="seg" id="control-modes"></div>
+        <!-- 白边's surface — 白 or 模糊 — rendered whole (heading included) by
+             `renderMatFill` and hidden in the modes where the border is not the
+             poster's background. Kept in the DOM rather than created here for the
+             reason every other host is: the panel rebuilds, this element does not. -->
+        <div class="mat-fill" id="control-mat" hidden></div>
         <div class="ctl-row" id="control-row"></div>
       </div>
     </div>

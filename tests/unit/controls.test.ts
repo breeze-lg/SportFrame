@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { aspectOf, resolveSize } from '../../src/core/geometry'
 import { frameFits } from '../../src/core/limits'
 import { TEMPLATES, getTemplate, validateTemplate } from '../../src/core/templates'
-import { controlSpecs, setControl, settleTemplate, type ControlContext, type ControlId } from '../../src/ui/controls'
+import { BACKGROUND_MODES, controlSpecs, matFillPanel, setBackgroundMode, setControl, setMatBlur, settleTemplate, type ControlContext, type ControlId } from '../../src/ui/controls'
 import type { Template } from '../../src/core/types'
 
 /**
@@ -29,6 +29,11 @@ function ctxFor(t: Template): ControlContext {
 
 const ALL: ControlId[] = ['scale', 'ox', 'oy', 'mat', 'matBottom', 'zoom', 'blur', 'darken']
 
+/** The five the frame always has, restated rather than read off the module: a
+ *  test that asked `controlSpecs` what its own first five are would pass for any
+ *  five at all. */
+const FRAME: ControlId[] = ['scale', 'ox', 'oy', 'mat', 'matBottom']
+
 /** Values to push into every control: far below, on, and far above the range,
  *  plus the two the DOM cannot produce and the record must not accept. */
 const SWEEP = [0, 1, 17, 40, 66, 90, 120, 200, 1e6, -40, NaN, Infinity]
@@ -37,12 +42,12 @@ describe('controlSpecs', () => {
   it('offers the five frame controls on every template, and 后景 only where there is a 后景', () => {
     for (const t of TEMPLATES) {
       const ids = controlSpecs(t, ctxFor(t)).map((s) => s.id)
-      const base = ['scale', 'ox', 'oy', 'mat', 'matBottom']
-      // 样张 paints a flat white card: 后景放大/虚化/压暗 would accept a drag
-      // and change nothing, which is the one thing a control in this app is not
-      // allowed to do.
-      const expected = t.background.mode === 'blur' ? [...base, 'zoom', 'blur', 'darken'] : base
-      expect(ids, t.id).toEqual(expected)
+      // 后景放大/虚化/压暗 describe the photograph *as its own backdrop*, so only
+      // 虚化 has them: 无照片 paints a flat fill, and 样张 ships as one — a slider
+      // that accepts a drag and changes nothing is the one thing a control in this
+      // app is not allowed to do.
+      const backdrop: ControlId[] = t.background.mode === 'blur' ? ['zoom', 'blur', 'darken'] : []
+      expect(ids, t.id).toEqual([...FRAME, ...backdrop])
     }
   })
 
@@ -164,6 +169,167 @@ describe('setControl', () => {
     expect(room).toBeLessThan(maxOx)
     expect(bigger.frame.ox).toBeLessThanOrEqual(room)
     expect(bigger.frame).toMatchObject({ scale: 96 })
+  })
+})
+
+describe('setBackgroundMode', () => {
+  it('has a look on the panel for every mode a record can hold', () => {
+    const panel: string[] = BACKGROUND_MODES.map((m) => m.id)
+    // Three, and exactly the three the app can deliver: a canvas with the
+    // photograph on it, a canvas with nothing on it, and no canvas at all. Every
+    // mode the panel can set has to be a record the validator accepts, or the write
+    // would throw away the user's next saved template.
+    expect(panel).toEqual(['blur', 'none', 'mount'])
+    for (const id of panel) {
+      const t = { ...getTemplate('classic')!, background: { mode: id } as Template['background'] }
+      expect(validateTemplate(t).ok, id).toBe(true)
+    }
+  })
+
+  it('offers 无照片 only the two numbers that change the card', () => {
+    const t = getTemplate('polaroid')!
+    const mounted = setBackgroundMode(t, 'mount', ctxFor(t))
+    // The delivery is the mount's own box, so the canvas follows the card: 前景大小
+    // resizes the window, 水平位置/垂直位置 move it, and none of the three can
+    // change the poster. 白边/下白边 do — in this mode the card *is* the poster.
+    expect(controlSpecs(mounted, ctxFor(t)).map((s) => s.id)).toEqual(['mat', 'matBottom'])
+    // ...and the numbers it does not offer are not writable either.
+    expect(setControl(mounted, 'scale', 40, ctxFor(t))).toBe(mounted)
+    expect(setControl(mounted, 'ox', 5, ctxFor(t))).toBe(mounted)
+  })
+
+  it('zeroes the offsets on the way into 无照片: a window cannot be off-centre inside itself', () => {
+    const t = getTemplate('classic')!
+    const moved = setControl(t, 'ox', 4, ctxFor(t))
+    expect(moved.frame.ox).not.toBe(0)
+    const mounted = setBackgroundMode(moved, 'mount', ctxFor(moved))
+    // Zeroed rather than merely ignored, so `mountRect` — which reads them to place
+    // the crop — has nothing to crop around, and the record never describes a
+    // poster that cannot exist.
+    expect(mounted.frame.ox).toBe(0)
+    expect(mounted.frame.oy).toBe(0)
+  })
+
+  it('writes the mode onto a copy, and leaves the singleton alone', () => {
+    const t = getTemplate('classic')!
+    const next = setBackgroundMode(t, 'none', ctxFor(t))
+    expect(next.background.mode).toBe('none')
+    expect(t.background.mode).toBe('blur')
+    expect(frameFits(ctxFor(t).size, next.frame)).toBe(true)
+  })
+
+  it('hands back the record it was given when the mode is already on', () => {
+    const t = getTemplate('classic')!
+    expect(setBackgroundMode(t, 'blur', ctxFor(t))).toBe(t)
+    const flat = getTemplate('spec-sheet')!
+    expect(setBackgroundMode(flat, 'none', ctxFor(flat))).toBe(flat)
+  })
+
+  it('keeps 后景放大 and 压暗 through a step out and back', () => {
+    const base = getTemplate('classic')!
+    const roomy: Template = {
+      ...base,
+      background: { ...base.background, zoom: 140, darken: 30, blur: 50 },
+    }
+    const flat = setBackgroundMode(roomy, 'mount', ctxFor(roomy))
+    // A 无照片 record still carries what 带背景 is made of: stepping out to the
+    // mount's own box and back is meant to return the backdrop you left, not a new
+    // one.
+    expect(flat.background).toMatchObject({ zoom: 140, darken: 30, blur: 50 })
+    const back = setBackgroundMode(flat, 'blur', ctxFor(flat))
+    expect(back.background).toMatchObject({ zoom: 140, darken: 30, blur: 50 })
+  })
+
+  it('invents nothing for 无照片: the poster is the card and nothing else', () => {
+    const t = getTemplate('classic')!
+    const mounted = setBackgroundMode(t, 'mount', ctxFor(t))
+    // 无照片 draws nothing behind the mount, and needs nothing behind it. A mode
+    // that quietly filled the canvas with a colour would be a mode lying about its
+    // own name — and the card, cropped to itself, would carry a field it does not
+    // have.
+    expect(mounted.background.color).toBeUndefined()
+    expect(validateTemplate(mounted).ok).toBe(true)
+  })
+
+  it('gives 虚化 a blur to be blurred by on the way in, and keeps 样张 its sheet', () => {
+    const flat = getTemplate('spec-sheet')!
+    expect(flat.background.mode).toBe('none')
+    // 样张's white sheet is authored (`background.color`), because its plate is
+    // printed on it — and it survives the trip out and back, so the card is not
+    // quietly left on an empty canvas.
+    expect(flat.background.color).toBe('#FFFFFF')
+    const blurred = setBackgroundMode(flat, 'blur', ctxFor(flat))
+    // 虚化 on a card that carries no blur would draw a *sharp* backdrop under a
+    // label that says otherwise — a control lying about what it did.
+    expect(blurred.background.blur).toBeGreaterThan(0)
+    // ...and the panel can then show the slider that number belongs to.
+    expect(controlSpecs(blurred, ctxFor(flat)).map((s) => s.id)).toEqual([...FRAME, 'zoom', 'blur', 'darken'])
+    expect(setBackgroundMode(blurred, 'none', ctxFor(flat)).background.color).toBe('#FFFFFF')
+  })
+
+  it('and keeps the blur a record already had', () => {
+    const t = getTemplate('classic')!
+    const blur = t.background.blur
+    const there = setBackgroundMode(setBackgroundMode(t, 'none', ctxFor(t)), 'blur', ctxFor(t))
+    expect(there.background.blur).toBe(blur)
+  })
+
+  it('settles the mount it inherited, on every built-in', () => {
+    for (const t of TEMPLATES) {
+      for (const id of BACKGROUND_MODES.map((m) => m.id)) {
+        const next = setBackgroundMode(t, id, ctxFor(t))
+        expect(frameFits(ctxFor(t).size, next.frame), `${t.id}/${id}`).toBe(true)
+      }
+    }
+  })
+})
+
+describe('白边 in 透明 and 无照片', () => {
+  it('is offered only where the border is the poster’s background', () => {
+    const t = getTemplate('polaroid')!
+    // 带背景 draws the border on a blurred backdrop, where the same blur is a
+    // border nobody can see — the failure this panel refuses everywhere else.
+    expect(matFillPanel(t).shown).toBe(false)
+    for (const mode of ['none', 'mount'] as const) {
+      const p = matFillPanel(setBackgroundMode(t, mode, ctxFor(t)))
+      expect(p.shown, mode).toBe(true)
+      expect(p.enabled, mode).toBe(true)
+      expect(p.blur, mode).toBe(false)
+    }
+  })
+
+  it('is shown but disabled where there is no border to fill', () => {
+    const t = getTemplate('classic')!
+    const p = matFillPanel(setBackgroundMode(t, 'mount', ctxFor(t)))
+    // Drawn rather than hidden: raising 白边 from 0 is a slider drag, and
+    // `syncMatFill` is what turns the row live without rebuilding the panel under
+    // the pointer.
+    expect(p.shown).toBe(true)
+    expect(p.enabled).toBe(false)
+  })
+
+  it('writes the flag on a copy, and hands back the record it was given', () => {
+    const t = getTemplate('polaroid')!
+    const on = setMatBlur(t, true, ctxFor(t))
+    expect(on.frame.matBlur).toBe(true)
+    expect(t.frame.matBlur).toBeUndefined()
+    expect(setMatBlur(on, true, ctxFor(on))).toBe(on)
+    expect(validateTemplate(on).ok).toBe(true)
+    expect(matFillPanel(on).blur).toBe(true)
+  })
+
+  it('keeps the flag through the modes where the row is not drawn', () => {
+    const t = getTemplate('spec-sheet')!
+    const on = setMatBlur(t, true, ctxFor(t))
+    const blurred = setBackgroundMode(on, 'blur', ctxFor(on))
+    expect(matFillPanel(blurred).shown).toBe(false)
+    expect(setBackgroundMode(blurred, 'mount', ctxFor(blurred)).frame.matBlur).toBe(true)
+  })
+
+  it('is refused by the validator unless it is a boolean', () => {
+    const t = getTemplate('polaroid')!
+    const corrupt = { ...t, frame: { ...t.frame, matBlur: 'false' } }
+    expect(validateTemplate(corrupt)).toEqual({ ok: false, error: 'frame.matBlur must be a boolean' })
   })
 })
 

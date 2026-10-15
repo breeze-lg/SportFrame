@@ -1,4 +1,4 @@
-import type { Ratio, Rect, Size } from './types'
+import type { Frame, Ratio, Rect, Size } from './types'
 
 const RATIOS: Record<Exclude<Ratio, 'orig'>, number> = {
   '4:5': 4 / 5,
@@ -35,6 +35,22 @@ export function cover(
 ): { s: number; w: number; h: number } {
   const s = Math.max(boxW / iw, boxH / ih) * zoom
   return { s, w: iw * s, h: ih * s }
+}
+
+/**
+ * The mount's own rectangle inside a `size` canvas: the frame grown by its mat,
+ * at the offsets the record carries.
+ *
+ * This is what a 无照片 poster *is* — the photograph and its border, with no paper
+ * around them — and it is measured with the same two functions `render` lays the
+ * mount out with, so a crop can never disagree with what was drawn. The offsets
+ * are included even though the mode ignores them: a record that carries `ox` is a
+ * record made in another mode, and a crop that assumed centred would cut the
+ * photograph in half.
+ */
+export function mountRect(size: Size, aspect: number, frame: Frame): Rect {
+  const f = fitRect(size, aspect, frame.scale, frame.ox ?? 0, frame.oy ?? 0)
+  return matRect(f, frame.mat, frame.matBottom, 1)
 }
 
 export function fitRect(

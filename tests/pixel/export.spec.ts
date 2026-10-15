@@ -134,6 +134,73 @@ test('[RF-5] the advertised 4x export is drawn, not downgraded, where the device
   expect(res.centre[3]).toBe(255)
 })
 
+/**
+ * 无照片 is a claim about the *file*, and the claim is a size: a 1000×1000 poster
+ * whose photograph and border measure 800×800 is written at 800×800. The two other
+ * modes are the control — same template, same photograph, full canvas — so a crop
+ * that leaked into 带背景, or a canvas that leaked into 无照片, is what this catches.
+ * The bytes are decoded rather than the model read: the dimensions in a PNG header
+ * are the ones the user gets.
+ *
+ * The numbers come from the mount's own arithmetic, restated here on purpose:
+ * `polaroid` is 64% of a 1152×1440 canvas — 737×922 — with mat 16 and matBottom 104,
+ * so the card is 769 wide and 1058 tall. (The ratio is the template's own, not the
+ * photograph's: a `4:5` canvas lays every photograph out at 4:5.)
+ */
+test('无照片 exports at the mount’s own size, and the other two at the canvas’s', async ({ page }) => {
+  const shots = await page.evaluate(async () => {
+    const { exportPng } = (window as any).__frameExport
+    const base = {
+      id: 't',
+      name: 't',
+      layout: { kind: 'single' },
+      canvas: { ratio: '4:5' },
+      frame: { scale: 64, radius: 0, mat: 16, matBottom: 104, shadow: 0 },
+    }
+    const out: { mode: string; w: number; h: number; corner: number[]; inside: number[] }[] = []
+    for (const mode of ['blur', 'none', 'mount']) {
+      const r = await exportPng({
+        size: { W: 1152, H: 1440 },
+        template: { ...base, background: { mode, blur: 20, zoom: 118, darken: 0 } },
+        photos: [(window as any).__photo],
+        text: {},
+        exif: null,
+        want: 1,
+      })
+      const bmp = await createImageBitmap(r.blob)
+      const c = document.createElement('canvas')
+      c.width = bmp.width
+      c.height = bmp.height
+      const ctx = c.getContext('2d')!
+      ctx.drawImage(bmp, 0, 0)
+      out.push({
+        mode,
+        w: bmp.width,
+        h: bmp.height,
+        corner: Array.from(ctx.getImageData(0, 0, 1, 1).data),
+        inside: Array.from(ctx.getImageData(8, 8, 1, 1).data),
+      })
+    }
+    return out
+  })
+  const by = Object.fromEntries(shots.map((s) => [s.mode, s]))
+
+  // The canvas, twice: 带背景 paints it, 透明 leaves it empty.
+  expect([by.blur!.w, by.blur!.h]).toEqual([1152, 1440])
+  expect([by.none!.w, by.none!.h]).toEqual([1152, 1440])
+  expect(by.blur!.corner[3]).toBe(255)
+  expect(by.none!.corner[3]).toBe(0)
+
+  // ...and no canvas at all: the mount's own box, which is the photograph plus a
+  // 16px border on three sides and 104px below.
+  expect([by.mount!.w, by.mount!.h]).toEqual([769, 1058])
+  // The card fills the file, and tightly: 8px in from the file's own edge is the
+  // card's white border rather than a background.
+  expect(Array.from(by.mount!.inside)).toEqual([255, 255, 255, 255])
+  expect(by.mount!.w).toBeLessThan(by.none!.w)
+  expect(by.mount!.h).toBeLessThan(by.none!.h)
+})
+
 test('[RF-5] a device that refuses the 4x canvas falls to the best rung it can hold', async ({
   page,
 }) => {

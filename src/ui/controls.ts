@@ -99,13 +99,14 @@ const LABELS: Record<ControlId, { label: string; unit: string }> = {
 
 /**
  * The panel for this template: one slider per thing this template can actually
- * change, in the order a user meets them.
+ * change, in the order a user meets them — and, above them, the one choice that
+ * is not a number: 背景 (`renderBackgroundModes`).
  *
- * 后景 is omitted entirely for a `solid` background, for the reason 文字 is
- * omitted for 留白: 样张 paints a flat white card, so a 后景虚化 slider there
- * would accept a drag and change nothing on the wall. A control that cannot
- * change the poster is the failure this app's architecture spends its comments
- * preventing, and the fix is the same one `fields.ts` applies — do not draw it.
+ * The 后景 numbers belong to 虚化 and are drawn only there. 无照片 puts nothing
+ * behind the photograph, so a 后景虚化 slider would accept a drag and change
+ * nothing on the wall — the same rule that keeps 文字 off 留白: a control that
+ * cannot change the poster is the failure this app's architecture spends its
+ * comments preventing, and the fix is to not draw it.
  *
  * The 白边 pair is offered everywhere, including the templates that ship with
  * no mat at all. Raising it there adds a border that was not there before,
@@ -156,6 +157,11 @@ export function controlSpecs(t: Template, ctx: ControlContext): ControlSpec[] {
     },
   )
 
+  // 后景 — the numbers 虚化 is made of, and only 虚化. 无照片 draws nothing behind
+  // the photograph, so a 后景虚化 slider there would accept a drag and change
+  // nothing on the wall — the same rule that keeps 文字 off 留白: a control that
+  // cannot change the poster is the failure this app's architecture spends its
+  // comments preventing, and the fix is to not draw it.
   if (background.mode === 'blur') {
     specs.push(
       { id: 'zoom', ...LABELS.zoom, step: 1, ...ZOOM, value: background.zoom ?? 100 },
@@ -169,7 +175,16 @@ export function controlSpecs(t: Template, ctx: ControlContext): ControlSpec[] {
   // record this app did not write (every write path settles), so the panel does
   // not refuse it; it just must not hand a range input `min="20" max="3"`,
   // which some engines clamp and others flip.
-  return specs.map((s) => ({ ...s, min: Math.min(s.min, s.max), max: Math.max(s.min, s.max) }))
+  //
+  // 无照片 is filtered last, and deliberately: its delivery is the mount's own box
+  // (see `outputRect`), so the canvas follows the card, and the three numbers that
+  // only move or resize the *window* — 前景大小, 水平位置, 垂直位置 — cannot change
+  // that poster or that file. 白边/下白边 stay, because they change the card, and in
+  // this mode the card is the poster. Wanting a bigger file is the export's ladder
+  // (1×/2×/4×), not a slider.
+  const offered =
+    background.mode === 'mount' ? specs.filter((s) => s.id === 'mat' || s.id === 'matBottom') : specs
+  return offered.map((s) => ({ ...s, min: Math.min(s.min, s.max), max: Math.max(s.min, s.max) }))
 }
 
 /**
@@ -246,6 +261,179 @@ export function settleTemplate(t: Template, ctx: ControlContext): Template {
   const oy = clamp(t.frame.oy ?? 0, bounds.y.min, bounds.y.max)
   if (scale === t.frame.scale && ox === (t.frame.ox ?? 0) && oy === (t.frame.oy ?? 0)) return t
   return { ...t, frame: { ...t.frame, scale, ox, oy } }
+}
+
+/**
+ * The three posters this app can deliver, which is what the 背景 row offers:
+ *
+ * - 带背景 — the photograph again, out of focus, filling a canvas of the
+ *   template's own shape.
+ * - 透明 — nothing behind it, on that same canvas: a PNG with an empty background
+ *   and the poster's full 1152×1440.
+ * - 无照片 — no canvas at all: the delivery is the mount's own box, so a 1000×1000
+ *   poster whose photograph and border measure 800×800 is written at 800×800.
+ */
+export type BackgroundMode = 'blur' | 'none' | 'mount'
+
+export const BACKGROUND_MODES: { id: BackgroundMode; label: string }[] = [
+  { id: 'blur', label: '带背景' },
+  { id: 'none', label: '透明' },
+  { id: 'mount', label: '无照片' },
+]
+
+/**
+ * Switch what is behind the photograph.
+ *
+ * A record write like any other, which is the point of it: 已调整 appears, 重置
+ * goes back to the style as authored, 撤销 walks back through it, 存为模板 keeps
+ * it, and a refresh brings it back.
+ *
+ * The numbers survive the switch. `blur`, `zoom` and `darken` mean nothing to
+ * 无照片 — nothing is drawn there — but they are what 虚化 is made of, and a user
+ * stepping out to an empty canvas and back expects the backdrop they left rather
+ * than a new one.
+ *
+ * Nothing is invented for 无照片. It draws nothing at all, and the one record that
+ * has something to draw is 样张, whose white sheet is *authored* (`background.color`)
+ * because its plate is printed on it — not a colour a control set, and not a colour
+ * a user picks. 虚化 is the mode that needs a number invented for it: 样张 carries
+ * no `blur`, and a 虚化 that drew a sharp backdrop under that label would be a
+ * control lying about what it did. The default is 40 — the middle of what the
+ * built-ins authored (28–62) rather than the maximum, which would be a look nobody
+ * chose.
+ */
+export function setBackgroundMode(t: Template, mode: BackgroundMode, ctx: ControlContext): Template {
+  if (t.background.mode === mode) return t
+  const background = { ...t.background, mode }
+  // 无照片 delivers the mount's own box, so the offsets have nowhere to move the
+  // card *to*: a window cannot be off-centre inside itself. Zeroed here rather than
+  // merely ignored, so a record's own numbers never describe a poster that cannot
+  // exist — and so `mountRect`, which reads them, has nothing to crop around.
+  const frame = mode === 'mount' ? { ...t.frame, ox: 0, oy: 0 } : t.frame
+  if (mode === 'blur' && !(background.blur ?? 0)) background.blur = 40
+  return settleTemplate({ ...t, frame, background }, ctx)
+}
+
+/**
+ * The choice itself: two words, because there are two answers.
+ *
+ * Rebuilt rather than synced, unlike the sliders next to it — a button is not
+ * dragged, so there is no pointer to lose and the `on` class is the whole of what
+ * changes.
+ */
+export function renderBackgroundModes(
+  host: HTMLElement,
+  active: string,
+  onPick: (mode: BackgroundMode) => void,
+): void {
+  host.textContent = ''
+  host.setAttribute('role', 'group')
+  host.setAttribute('aria-label', '背景')
+  for (const m of BACKGROUND_MODES) {
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.className = 'seg-btn' + (m.id === active ? ' on' : '')
+    b.dataset.mode = m.id
+    b.textContent = m.label
+    b.setAttribute('aria-pressed', m.id === active ? 'true' : 'false')
+    b.addEventListener('click', () => onPick(m.id))
+    host.appendChild(b)
+  }
+}
+
+/**
+ * 白边's two surfaces: paper white (the default) and the photograph itself, blurred.
+ */
+export const MAT_FILLS: { id: 'white' | 'blur'; label: string }[] = [
+  { id: 'white', label: '白' },
+  { id: 'blur', label: '模糊' },
+]
+
+/** What the 白边 row needs to know about the poster it is adjusting. */
+export type MatFillPanel = {
+  /** Drawn at all? The border has to *be* the poster's background for this to be a
+   *  choice worth offering — which is 透明 and 无照片, where the card is all there is.
+   *  On 带背景's blurred backdrop the same blur is a border nobody can see. */
+  shown: boolean
+  /** Live? A card with no border has nothing to fill. Drawn disabled rather than
+   *  hidden, because raising 白边 from 0 is a slider drag and this panel cannot be
+   *  rebuilt under one — see `syncMatFill`. */
+  enabled: boolean
+  blur: boolean
+}
+export function matFillPanel(t: Template): MatFillPanel {
+  return {
+    // Drawn in the modes where the border *is* the poster's background, whatever the
+    // border's width: raising 白边 from 0 is a drag, and a row that appeared partway
+    // through one would be a row rebuilt under the pointer.
+    shown: t.background.mode === 'none' || t.background.mode === 'mount',
+    enabled: t.frame.mat + t.frame.matBottom > 0,
+    blur: !!t.frame.matBlur,
+  }
+}
+
+/**
+ * 白边, in white or in the photograph.
+ *
+ * A record write like any other: 已调整, 重置, 撤销, 存为模板 and a refresh all see
+ * it, and it survives a trip out to 带背景 and back — where the row is not drawn and
+ * the flag simply waits.
+ */
+export function setMatBlur(t: Template, on: boolean, ctx: ControlContext): Template {
+  if (!!t.frame.matBlur === on) return t
+  return settleTemplate({ ...t, frame: { ...t.frame, matBlur: on } }, ctx)
+}
+
+/** The 白边 row, heading included: a heading that could not be hidden with its row
+ *  would be a word over nothing. */
+export function renderMatFill(
+  host: HTMLElement,
+  panel: MatFillPanel,
+  onPick: (on: boolean) => void,
+): void {
+  host.hidden = !panel.shown
+  host.textContent = ''
+  if (!panel.shown) return
+
+  const head = document.createElement('div')
+  head.className = 'rail-h'
+  const title = document.createElement('b')
+  title.textContent = '白边'
+  const note = document.createElement('span')
+  note.className = 'h-note'
+  note.textContent = '填充'
+  head.append(title, note)
+  host.appendChild(head)
+
+  const row = document.createElement('div')
+  row.className = 'seg'
+  row.setAttribute('role', 'group')
+  row.setAttribute('aria-label', '白边填充')
+  for (const f of MAT_FILLS) {
+    const on = f.id === 'blur'
+    const b = document.createElement('button')
+    b.type = 'button'
+    b.className = 'seg-btn' + (on === panel.blur ? ' on' : '')
+    b.dataset.fill = f.id
+    b.textContent = f.label
+    b.disabled = !panel.enabled
+    b.setAttribute('aria-pressed', on === panel.blur ? 'true' : 'false')
+    b.addEventListener('click', () => onPick(on))
+    row.appendChild(b)
+  }
+  host.appendChild(row)
+}
+
+/**
+ * The one thing about that row that can change without a rebuild: whether there is
+ * a border to fill.
+ *
+ * Called from the *slider* write path, because 白边 0 → 16 is a drag, and a rebuild
+ * under a drag loses the pointer — the same reason `syncControls` exists for the
+ * sliders and `renderControls` does not run per tick.
+ */
+export function syncMatFill(host: HTMLElement, enabled: boolean): void {
+  for (const b of host.querySelectorAll<HTMLButtonElement>('.seg-btn')) b.disabled = !enabled
 }
 
 /** The readout: one decimal at most, because a settled scale is a division's

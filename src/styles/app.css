@@ -604,10 +604,11 @@ canvas#cv:not([width]) { visibility: hidden; }
    和滑块挤一行会两者都读不清，所以它们各占一行。 */
 .pos-block,
 .slot-block { display: flex; flex-direction: column; gap: 6px; }
-/* The position block's own note, and deliberately not `.ctl-note`: that class
-   belongs to the one 已调整 note above the panels, and the stylesheet reads it as
-   a flag rather than as a caption (see `.panels[data-adjusted]`). */
-.pos-note { font-family: var(--mono); font-size: 10.5px; color: var(--quiet); }
+/* A note beside a block heading — 位置's 整块一起动, 白边's 填充. Monospace and quiet,
+   because it is an annotation on a word rather than a control. Deliberately not
+   `.ctl-note`: that class belongs to the one 已调整 note above the panels, and the
+   stylesheet reads it as a flag rather than as a caption (see `.panels[data-adjusted]`). */
+.h-note { font-family: var(--mono); font-size: 10.5px; color: var(--quiet); }
 .slot-block { padding-top: 8px; border-top: 1px solid var(--bevel); }
 .slot-type { display: flex; align-items: center; gap: 6px; }
 .font-pick {
@@ -622,8 +623,8 @@ canvas#cv:not([width]) { visibility: hidden; }
   padding: 5px 6px;
 }
 .font-pick:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; border-color: var(--ink); }
-.anchors { display: flex; gap: 4px; }
-.anchor {
+.seg { display: flex; gap: 4px; }
+.seg-btn {
   flex: 1;
   padding: 5px 4px;
   border: 1px solid var(--bevel);
@@ -634,8 +635,8 @@ canvas#cv:not([width]) { visibility: hidden; }
   font-size: 12.5px;
   cursor: pointer;
 }
-.anchor.on { border-color: var(--ink); color: var(--ink); box-shadow: var(--lift); }
-.anchor:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.seg-btn.on { border-color: var(--ink); color: var(--ink); box-shadow: var(--lift); }
+.seg-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 /* 已调整 的圆点 — the mark in the middle of the chip that is on. The reference
    editor draws a button there, and the gesture is real here too (picking the
