@@ -83,6 +83,17 @@
       <div class="field-row" id="field-row"></div>
     </div>
 
+    <!-- 画面 — the mount's own geometry, one slider per number this template
+         can change (see `src/ui/controls.ts`). Same construction and the same
+         rule as 文字: the rows are the template's, not a fixed board, so 样张's
+         solid background gets no 后景 row rather than a slider that moves
+         nothing. The note beside the heading is 已调整, and `app.css` shows it
+         from `data-adjusted` alone. -->
+    <div class="controls" id="controls" data-adjusted="false">
+      <div class="rail-h"><b>画面</b><span class="ctl-note">已调整 · 存为模板可保留</span></div>
+      <div class="ctl-row" id="control-row"></div>
+    </div>
+
     <div class="acts">
       <!-- Secondary, not primary: saving a template is a detour from the one
            action this screen exists for, and `.btn-primary`'s `flex: 1` would

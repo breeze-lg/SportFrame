@@ -85,15 +85,36 @@ test('the drop zone can be reached and opened from the keyboard alone', async ({
   expect(await page.evaluate(() => (window as any).__opens)).toBe(3)
 })
 
-test('there is no adjustments control in stages 1-4', async ({ page }) => {
+/**
+ * This guard used to read "there is no adjustments control in stages 1-4" — no
+ * element containing 调整, no `input[type=range]` anywhere in the dock. The 画面
+ * panel is a later stage's work and is exactly the surface that test said was
+ * absent, so the claim about *stages* is retired. What replaces it is the claim
+ * that still has content: the sliders that exist are the panel's, they all
+ * carry a name, and there is no second place in this app that adjusts a poster.
+ *
+ * `tests/pixel/controls.spec.ts` is where the panel itself is answered for —
+ * which controls each template gets, that a drag reaches the wall, and that
+ * 存为模板 keeps the numbers.
+ */
+test('the only adjustment surface is the 画面 panel', async ({ page }) => {
   await page.goto('/')
-  // Non-exact: a literal <button>调整</button> is not the only shape this
-  // returns in. A heading 调整参数, or a compound label, contains the same
-  // characters and must fail this guard too.
-  await expect(page.getByText('调整', { exact: true })).toHaveCount(0)
-  await expect(page.getByText('调整')).toHaveCount(0)
-  // A slider with no text at all — the shape an adjustments panel actually
-  // ships as — carries none of that text, so the range input is counted
-  // separately.
-  await expect(page.locator('input[type="range"]')).toHaveCount(0)
+
+  const sliders = page.locator('input[type="range"]')
+  // 经典 is the boot mount and a blur one, so all eight rows are on: five for
+  // the mount and three for 后景.
+  await expect(sliders).toHaveCount(8)
+
+  const labels = await sliders.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
+  for (const label of labels) {
+    expect(label, 'a slider with no accessible name').toBeTruthy()
+    // one row per slider, with its own readout beside it
+    await expect(page.locator(`#controls .ctl:has(input[aria-label="${label}"])`)).toHaveCount(1)
+    await expect(page.locator(`#controls .ctl:has(input[aria-label="${label}"]) .ctl-val`)).toHaveCount(1)
+  }
+  expect(new Set(labels).size, 'two sliders share a name').toBe(labels.length)
+
+  // And nothing outside the panel offers one: the rest of the dock is a drop
+  // zone, a rail of mounts, the text fields and two buttons.
+  expect(await sliders.evaluateAll((els) => els.filter((e) => !e.closest('#controls')).length)).toBe(0)
 })

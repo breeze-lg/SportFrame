@@ -1,5 +1,5 @@
 import { render } from './core/render'
-import { resolveSize, matRect } from './core/geometry'
+import { resolveSize, matRect, aspectOf } from './core/geometry'
 import { TEMPLATES, getTemplate } from './core/templates'
 import { drawMat, roundedRect } from './core/mat'
 import { drawBackground } from './core/background'
@@ -10,6 +10,15 @@ import { createState } from './ui/state'
 import { toast } from './ui/toast'
 import { renderRail, chipThumb } from './ui/rail'
 import { renderFields } from './ui/fields'
+import {
+  controlSpecs,
+  renderControls,
+  setControl,
+  settleTemplate,
+  syncControls,
+  type ControlContext,
+  type ControlId,
+} from './ui/controls'
 import { plaqueText } from './ui/plaque'
 import { loadCustom, saveCustom, browserStorage, sessionStore } from './ui/custom'
 import type { Size, Template, TextSlotId } from './core/types'
@@ -168,6 +177,77 @@ function paintFields(): void {
   fieldBox.hidden = drawn === 0
 }
 
+/**
+ * 画面 — the sliders for the mount's own geometry (see `src/ui/controls.ts`).
+ *
+ * Same shape as 文字 next door, and for the same reason: the rows are built
+ * where the *template* changes and never from `draw`, which runs per slider
+ * tick. A range input rebuilt under a moving pointer loses the drag.
+ */
+const controlBox = document.getElementById('controls') as HTMLElement
+const controlHost = document.getElementById('control-row') as HTMLElement
+
+/**
+ * What the panel measures its ceilings against: the canvas the wall is drawn
+ * at, and the aspect `render` will lay the photograph out with. Both come from
+ * the same functions the renderer uses, so a slider's maximum is a claim about
+ * the poster on screen rather than a second opinion about it.
+ */
+function controlContext(t: Template): ControlContext {
+  const photo = state.photo
+  return {
+    size: canvasSize(t),
+    aspect: aspectOf(t.canvas.ratio, photo ? { width: photo.width, height: photo.height } : undefined),
+  }
+}
+
+/**
+ * 已调整 — the wall is showing something the rail would not hand you.
+ *
+ * The comparison is against the record the rail *resolves* for this id: the
+ * built-in for a built-in, the stored record for a saved template. That is the
+ * honest reading of "edited and not saved", and it is why re-picking the mount
+ * you are already on clears the marker — `pick` hands back the stock record and
+ * the numbers the user moved are gone, which is the one thing the marker exists
+ * to warn them about.
+ */
+function paintAdjusted(t: Template): void {
+  const source = getTemplate(t.id) ?? savedTemplates().find((s) => s.id === t.id)
+  const mine = JSON.stringify([t.frame, t.background])
+  // Nothing to compare against means nothing was overridden: a record with no
+  // source in the rail is a record this app did not derive from one.
+  const theirs = source ? JSON.stringify([source.frame, source.background]) : mine
+  controlBox.dataset.adjusted = mine === theirs ? 'false' : 'true'
+}
+
+function paintControls(): void {
+  const t = state.template
+  controlBox.hidden = !t
+  if (!t) return
+  renderControls(controlHost, controlSpecs(t, controlContext(t)), onControl)
+  paintAdjusted(t)
+}
+
+/**
+ * One slider moved. The write is `setControl`'s — clamped against the layout,
+ * and settled against what it disturbed — and everything after it is
+ * bookkeeping: the sibling sliders get the new ceilings, the marker gets the
+ * new answer, and the wall is redrawn from the one record that changed.
+ *
+ * `setControl` returning the record it was handed is a drag that landed on the
+ * value already there, and that redraws nothing.
+ */
+function onControl(id: ControlId, raw: number): void {
+  const t = state.template
+  if (!t) return
+  const next = setControl(t, id, raw, controlContext(t))
+  if (next === t) return
+  state.template = next
+  syncControls(controlHost, controlSpecs(next, controlContext(next)))
+  paintAdjusted(next)
+  draw()
+}
+
 function pick(id: string): void {
   // Both lists. A saved template cannot collide with a built-in id, so the
   // built-ins answer first and the saved list answers for the rest — the same
@@ -179,6 +259,9 @@ function pick(id: string): void {
   paintRail(id)
   paintPlaque(t)
   paintFields()
+  // The mount's own numbers, not the ones the last mount was given: a pick is
+  // how a user gets back to the template as authored.
+  paintControls()
   draw()
 }
 
@@ -208,10 +291,20 @@ wireInput(
   (photo) => {
     state.photo = photo
     state.exif = photo.exif
+    // A photograph can resize the canvas — a saved template with an `orig`
+    // ratio is sized from the file — and the panel's ceilings are measured
+    // against the canvas, so the record is settled against the new one before
+    // anything draws. For the nine built-ins this is the identity: their ratios
+    // are constants, so the canvas a photo lands on is the canvas that was
+    // already there, and `settleTemplate` hands back the record it was given.
+    if (state.template) {
+      state.template = settleTemplate(state.template, controlContext(state.template))
+    }
     // The rail is prints of this photograph, so it is repainted here and not
     // only on a pick: without this the chips stay blank mounts until the user
     // happens to choose a style, which is the one moment they are not needed.
     paintRail(state.template?.id ?? null)
+    paintControls()
     draw()
     toast(`已载入 ${photo.width} × ${photo.height}`)
   },
@@ -326,13 +419,28 @@ function removeSaved(id: string): void {
   paintRail(state.template?.id ?? null)
   if (wasActive && state.template) {
     paintPlaque(state.template)
-    // the fields belong to the template, so a delete that moves the selection
-    // has to move them with it
+    // the fields and the sliders belong to the template, so a delete that moves
+    // the selection has to move them with it
     paintFields()
+    paintControls()
     // the canvas is showing a template that no longer exists until this runs
     draw()
   }
   toast(`已删除模板：${victim.name}`)
+}
+
+/**
+ * A template's numbers, as its own objects.
+ *
+ * `state.template` is a `TEMPLATES` singleton until a slider moves, and even
+ * then the `frame`/`background` blocks it carries are objects the rail is also
+ * reading. A saved record outlives both, so it is copied by value rather than
+ * by reference. A JSON round trip rather than `structuredClone`: the record is
+ * plain JSON data — it is handed to `JSON.stringify` a few lines below — and
+ * `structuredClone` is not in every WebKit this app runs on.
+ */
+function deepCopy(t: Template): Template {
+  return JSON.parse(JSON.stringify(t)) as Template
 }
 
 /**
@@ -345,6 +453,12 @@ function removeSaved(id: string): void {
  * entitlement is checked against the built-in set and a saved copy is not a
  * purchase; the id is a timestamp because two saves of the same style are two
  * templates and collapsing them would lose one.
+ *
+ * The copy is deep, and that is what makes the 画面 sliders persistable: they
+ * write their numbers into `state.template`, so the record this reads is the
+ * geometry the user is looking at. Sharing a nested block instead would store a
+ * live reference, and the next slider drag would edit a record that is already
+ * on disk.
  */
 document.getElementById('saveTpl')?.addEventListener('click', () => {
   const template = state.template
@@ -356,7 +470,7 @@ document.getElementById('saveTpl')?.addEventListener('click', () => {
   }
   const name = (prompt('模板名称', template.name + ' 副本') || '').trim()
   if (!name) return
-  const copy: Template = { ...template, id: `custom-${Date.now()}`, name, premium: false }
+  const copy: Template = { ...deepCopy(template), id: `custom-${Date.now()}`, name, premium: false }
   const where = persist(copy)
   // Before the toast, not after: what the user is told has to describe a rail
   // they are already looking at.
@@ -368,6 +482,7 @@ document.getElementById('saveTpl')?.addEventListener('click', () => {
 
 paintRail(state.template?.id ?? null)
 paintFields()
+paintControls()
 draw()
 
 // ---------------------------------------------------------------------------
@@ -412,8 +527,11 @@ if (new URLSearchParams(location.search).get('demo') === '1') {
     state.exif = null
     // same reason as the loaded-photo path above: the chips are prints of this
     // photograph, and the demo is the front door — blank mounts there would be
-    // the defect rather than a corner of it
+    // the defect rather than a corner of it. The sliders are rebuilt for the
+    // same reason: their ceilings are measured against the canvas, and the
+    // canvas is what just arrived.
     paintRail(state.template?.id ?? null)
+    paintControls()
     draw()
   }
   im.src = d.toDataURL()

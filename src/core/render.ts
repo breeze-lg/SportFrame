@@ -28,7 +28,18 @@ export function render(input: RenderInput): void {
 
   if (photo) {
     const aspect = aspectOf(template.canvas.ratio, photo)
-    frame = fitRect(box, aspect, template.frame.scale, 0, 0)
+    // The offsets are the 画面 panel's 水平位置/垂直位置. They were always
+    // `fitRect`'s parameters and never anything else's business — the renderer
+    // passed 0,0 and nobody could move a photograph off centre. They stay
+    // optional in the record (see `Frame`) so a template saved before the panel
+    // existed still loads and still means what it drew.
+    frame = fitRect(
+      box,
+      aspect,
+      template.frame.scale,
+      template.frame.ox ?? 0,
+      template.frame.oy ?? 0,
+    )
 
     const mat = matRect(frame, template.frame.mat, template.frame.matBottom, k)
     const inset = 1 * k

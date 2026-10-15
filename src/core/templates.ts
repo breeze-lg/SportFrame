@@ -60,6 +60,16 @@ export function validateTemplate(t: unknown): Validation {
     if (typeof f[key] !== 'number') return { ok: false, error: `frame.${key} must be a number` }
     if (!Number.isFinite(f[key])) return { ok: false, error: `frame.${key} must be finite` }
   }
+  // optional, unlike the five above: a record written before the 画面 panel
+  // existed carries no offset, and absent means centred — which is what it
+  // drew. A NaN that *is* present still has to be refused, for the reason the
+  // loop above refuses one: `fitRect` would hand `drawImage` a non-finite rect.
+  for (const key of ['ox', 'oy']) {
+    const v = f[key]
+    if (v === undefined) continue
+    if (typeof v !== 'number') return { ok: false, error: `frame.${key} must be a number` }
+    if (!Number.isFinite(v)) return { ok: false, error: `frame.${key} must be finite` }
+  }
 
   if (o.text !== undefined) {
     const tx = o.text as Record<string, unknown> | null

@@ -9,6 +9,15 @@ style prints — 经典 takes a title and a subtitle, 拍立得 and 样张 a tit
 mat, 留白 none at all — and what you type follows you from style to style. The
 camera plate needs no typing: it is read from the photograph's own EXIF.
 
+The mount's own geometry is adjustable too. 画面 offers one slider per number the
+current template can change — 前景大小, 水平位置/垂直位置, 白边/下白边, and (on a
+blurred background) 后景放大/虚化/压暗 — and 存为模板 keeps the numbers you set,
+so a look you tuned is a style you can pick again. The sliders cannot be driven
+into a poster the renderer would crop: every maximum is the layout's own ceiling,
+computed in `src/core/limits.ts`. Nothing you change there is saved until you
+press 存为模板; the note beside the heading says 已调整 until you do, and picking
+the mount again is how the numbers as authored come back.
+
 Photos never leave the device. There is no backend.
 
 ## Develop
@@ -80,6 +89,30 @@ template out at 1152×1440 — `resolveSize(ratio, 1440)`, the default of
 writes `longEdge` today, so the two agree; give it a writer (a size picker) and
 the guard goes on checking 1440 until you change it by hand.
 
+## The 画面 panel
+
+`src/ui/controls.ts` describes the panel as data — `controlSpecs(template,
+context)` returns one `ControlSpec` per slider, with the value it holds and the
+range it may be dragged over — and `setControl` is the whole write path: one
+value, clamped, on a copy of the record. Both are pure, which is why the whole
+of the panel is testable in `node` (`tests/unit/controls.test.ts` sweeps every
+control on every built-in across its range) and why the DOM half is dumb enough
+to have nothing in it to test.
+
+The ceilings are not round numbers and they are not the panel's own opinion:
+`src/core/limits.ts` derives them from the arithmetic in `fitRect` and `matRect`,
+so a slider's maximum is the largest value that still lays the mat inside the
+canvas. `tests/unit/limits.test.ts` keeps the closed forms honest by laying
+posters out with the same two functions `render` calls. Two rules follow from
+that, and both are load-bearing:
+
+- Raising one control never moves another *except* the offsets, which have less
+  room as the photograph grows — so a write settles the frame afterwards rather
+  than clamping only what the user touched.
+- 后景 is not offered where there is no 后景. 样张 paints a flat white card, so a
+  虚化 slider there would accept a drag and change nothing, which is the failure
+  文字 already refuses for 留白.
+
 ## Known limitations
 
 **A rail chip shows the photograph, not a preview of the style.** Each chip is
@@ -88,12 +121,19 @@ specifies for `.print .rawshot`, so the nine chips differ only by the selected
 ring and the brass corner. A true per-style thumbnail would have to render each
 template small — and the frame geometry is absolute pixels tuned to the 1440
 long edge (see above), so a 50×62 render of 样张 would be nonsense. Decoupling
-the geometry from the long edge is the prerequisite, not a chip-level fix.
+the geometry from the long edge is the prerequisite, not a chip-level fix. The
+画面 panel sharpens this: a template saved from 经典 with a fat mat and a smaller
+photograph is indistinguishable from 经典 on the rail, and only the rail's own
+header line names it. That is the shape this limitation takes now.
 
 **存为模板 saves the style, not the words.** The template record has no room for
 text values, so a saved template brings back its typography and the fields come
 up empty; `state.text` is one record for the session. Adding values to the
 record means touching `validateTemplate`, the storage blob and its versioning.
+What a saved template *does* carry is its geometry — the numbers the 画面 panel
+wrote (see above). The two are not the same problem: a style's typography and
+its measurements are the template's, while the words are the user's, and 文字's
+whole design is that they follow the user from mount to mount.
 
 **The 4× export tier is unverified on real WebKit.** 4× is what the spec (§10)
 advertises as the premium unlock, and `src/ui/export.ts` makes it deliverable by
@@ -120,8 +160,11 @@ Adjustments (crop, straighten, tone looks) and collage layouts are specified but
 deliberately unbuilt — the spec's stage list (§4, stages 5–6, in
 `docs/superpowers/specs/2026-10-07-photo-frame-app-design.md`) puts them after
 the shippable product, and §12's adjust-panel metric is the test of whether they
-were worth taking. `layout` is carried in the data model and nothing reads it:
-`render` draws `photos[0]` and no more.
+were worth taking. The 画面 panel adjusts the *mount* — how large the photograph
+is, where it sits, how deep the mat, how the backdrop is treated — and stops
+there: nothing in this app crops, straightens or grades the photograph itself,
+and no panel value changes a pixel of the image. `layout` is carried in the data
+model and nothing reads it: `render` draws `photos[0]` and no more.
 
 Payments are a seam only — one boolean (`Template.premium`) and two functions in
 `src/entitlements.ts`, both answering `true` in v1, wired at two call sites in

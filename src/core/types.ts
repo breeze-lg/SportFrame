@@ -17,6 +17,12 @@ export type Frame = {
   mat: number
   matBottom: number
   shadow: number
+  /** How far off the canvas centre the mount sits, in `fitRect`'s own offset
+   *  units: 100 is a shift of 35% of the box. Optional because every record
+   *  written before the 画面 controls existed has no such field, and a missing
+   *  offset is a centred mount — which is what those records mean. */
+  ox?: number
+  oy?: number
 }
 
 export type TextAnchor = 'top' | 'bottom' | 'center' | 'mat'
