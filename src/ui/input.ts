@@ -48,27 +48,30 @@ function downscale(img: HTMLImageElement): HTMLImageElement | null {
 }
 
 /**
- * The one object URL the photo currently in hand still needs.
+ * Releases the blob URL a photograph is holding.
  *
- * It is deliberately *not* revoked when the decode settles: `Photo.el.src` is
- * that URL, and the export draws from that same `el` long afterwards. A browser
- * that discards decoded image data under memory pressure and re-fetches from
- * `src` will then fail — `drawImage` throws
- * `InvalidStateError: … in the 'broken' state` — and iOS Safari evicts decoded
- * data aggressively. The trigger conditions are this app's normal ones: a
- * 12 MP photo is ~48 MB decoded, held in a detached, never-painted `<img>`
- * while the export allocates its canvas.
+ * The lifetime of that URL belongs to whoever holds the photo, and this is how
+ * they let it go. It is deliberately *not* revoked when the next photograph
+ * decodes — that was the rule when the app held exactly one photo and each new
+ * one replaced it. The list holds every photograph the user loaded, and the
+ * export draws from `el` long after the decode settles, so revoking one on the
+ * next load would break a photo that is still listed: `drawImage` throws
+ * `InvalidStateError: … in the 'broken' state` on a browser that discarded the
+ * decoded data and re-fetches from `src`, which is exactly what iOS Safari does
+ * under memory pressure, and the trigger conditions are this app's normal ones
+ * (a 12 MP photo is ~48 MB decoded, held detached while the export allocates
+ * its canvas). Call this when a photograph leaves the list.
  *
- * It is revoked when the next photo replaces it, so a session holds at most one
- * live URL. The prototype's bug was never revoking at all — unbounded growth
- * for the lifetime of the page — and that stays fixed; one live URL at a time
- * is lifetime management, not a leak.
+ * What does not change is the failure path: a decode that throws had no photo
+ * escape it, so its URL goes at once (see the `catch` in `decodePhoto`) — that
+ * one can never be drawn from.
  */
-let liveUrl: string | null = null
-
-function releaseLiveUrl(): void {
-  if (liveUrl !== null) URL.revokeObjectURL(liveUrl)
-  liveUrl = null
+export function releasePhoto(photo: Photo): void {
+  const src = photo.el.src
+  // Only a blob URL is ours to revoke. The demo photograph is a `data:` URL and
+  // allocated no object URL at all; `revokeObjectURL` ignores a string it does
+  // not recognise, but saying which ones are ours is cheaper than knowing that.
+  if (src.startsWith('blob:')) URL.revokeObjectURL(src)
 }
 
 export async function decodePhoto(
@@ -109,12 +112,10 @@ export async function decodePhoto(
     }
 
     // A photo escaped, so these bytes live on: `el.src` is this URL until the
-    // next photo replaces it (see `liveUrl`). Released here, after the decode
-    // has settled, never before it — a pending load is never pulled out from
-    // under itself.
-    releaseLiveUrl()
-    liveUrl = url
-
+    // photograph leaves the list, and `releasePhoto` is what ends it (see
+    // above). The prototype's bug was never revoking at all — unbounded growth
+    // for the lifetime of the page — and that stays fixed: the list releases
+    // what it drops, and the failure path below releases what never arrived.
     return {
       el,
       preview,
@@ -136,33 +137,55 @@ export async function decodePhoto(
 export function wireInput(
   drop: HTMLElement,
   fileInput: HTMLInputElement,
-  onPhoto: (photo: Photo) => void,
+  onPhotos: (photos: Photo[]) => void,
   onError: (message: string) => void,
   readExif: (buf: ArrayBuffer) => Exif | null,
 ): void {
-  const handle = async (file: File | undefined | null) => {
-    if (!file) return
+  /**
+   * A batch, decoded one file at a time and reported as one event.
+   *
+   * One bad file must not discard the good ones beside it: a folder dragged in
+   * where one entry is a PDF leaves the rest loaded, and the message names the
+   * file it belongs to — with several files in flight, "这不是图片文件" on its
+   * own leaves the user hunting for which one. The name is only added when
+   * there is more than one file, so the single-file case keeps the terse
+   * message it has always had.
+   *
+   * Decoding is sequential rather than concurrent: each decode holds a full
+   * bitmap (48 MB for a 12 MP photo) and the preview downscale happens inline,
+   * so a batch of ten out of a folder is a memory spike worth avoiding for the
+   * sake of arriving a moment sooner.
+   */
+  const handle = async (files: File[] | undefined | null) => {
+    const batch = [...(files ?? [])]
+    if (batch.length === 0) return
 
-    // Reading and rendering fail for different reasons and need different
-    // words. They shared one `try` until Task 12 put the renderer behind
-    // `onPhoto`: from then on a throw from `drawImage` came out of the UI as
-    // "图片读取失败 — 该格式可能不被此浏览器支持", which sends the user to check
-    // a photo that decoded perfectly well and hides a rendering fault behind a
-    // file-format message. Two `try`s, two messages.
-    let photo: Photo
-    try {
-      photo = await decodePhoto(file, readExif)
-    } catch (e) {
-      onError(e instanceof Error ? e.message : '图片读取失败')
-      return
+    const decoded: Photo[] = []
+    for (const file of batch) {
+      // Reading and rendering fail for different reasons and need different
+      // words. They shared one `try` until Task 12 put the renderer behind
+      // `onPhoto`: from then on a throw from `drawImage` came out of the UI as
+      // "图片读取失败 — 该格式可能不被此浏览器支持", which sends the user to check
+      // a photo that decoded perfectly well and hides a rendering fault behind
+      // a file-format message. Two `try`s, two messages.
+      try {
+        decoded.push(await decodePhoto(file, readExif))
+      } catch (e) {
+        const why = e instanceof Error ? e.message : '图片读取失败'
+        onError(batch.length > 1 ? `${file.name}：${why}` : why)
+      }
     }
+    if (decoded.length === 0) return
 
     // Not left to propagate: an unhandled rejection here is a renderer fault
     // that reaches the user as *silence* — no message at all, while the canvas
     // has already been re-sized (which clears it). It gets the renderer's own
-    // name and the renderer's own detail.
+    // name and the renderer's own detail. The whole batch is handed over at
+    // once because the renderer draws one photo and the list wants all of them:
+    // a caller that had to add them one at a time would repaint the wall once
+    // per file, and the previews with it.
     try {
-      onPhoto(photo)
+      onPhotos(decoded)
     } catch (e) {
       onError(e instanceof Error ? `渲染失败：${e.message}` : '渲染失败')
     }
@@ -180,7 +203,10 @@ export function wireInput(
   })
   fileInput.addEventListener('change', (e) => {
     const t = e.target as HTMLInputElement
-    void handle(t.files?.[0])
+    void handle(Array.from(t.files ?? []))
+    // Cleared so that picking the same file twice in a row is a change event
+    // the picker's own `multiple` support depends on: a `FileList` left in
+    // place does not fire for a repeat selection.
     t.value = ''
   })
 
@@ -198,16 +224,18 @@ export function wireInput(
   )
   drop.addEventListener('drop', (e) => {
     const dt = (e as DragEvent).dataTransfer
-    void handle(dt?.files?.[0])
+    void handle(Array.from(dt?.files ?? []))
   })
 
   document.addEventListener('paste', (e) => {
     const items = e.clipboardData?.items ?? []
+    const pasted: File[] = []
     for (const it of items) {
       if (it.type && it.type.indexOf('image/') === 0) {
-        void handle(it.getAsFile())
-        return
+        const f = it.getAsFile()
+        if (f) pasted.push(f)
       }
     }
+    void handle(pasted)
   })
 }

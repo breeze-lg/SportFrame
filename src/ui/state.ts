@@ -1,8 +1,15 @@
-import type { Exif, Photo, Size, Template, TextSlotId } from '../core/types'
+import type { Photo, Size, Template, TextSlotId } from '../core/types'
 
 export type AppState = {
-  photo: Photo | null
-  exif: Exif | null
+  /** Every photograph loaded this session, in the order they arrived. This list
+   *  is the left column; the wall shows one of them. */
+  photos: Photo[]
+  /** Which of `photos` the wall is showing. An index rather than a reference,
+   *  because the list is what gets appended to and deleted from — a held
+   *  reference would have to be re-found after every mutation, and would be
+   *  wrong for exactly as long as that took. Read it through `activePhoto` in
+   *  `src/ui/photos.ts`, which is where the list's own rules live. */
+  active: number
   template: Template | null
   /** What the user has typed, by slot. The app owns these, not the template:
    *  switching mount keeps the words and lets the new typography set them.
@@ -15,8 +22,8 @@ export type AppState = {
 
 export function createState(initial: Partial<AppState> = {}): AppState {
   return {
-    photo: null,
-    exif: null,
+    photos: [],
+    active: 0,
     template: null,
     text: {},
     // The placeholder before the first `draw()`, and it has to agree with

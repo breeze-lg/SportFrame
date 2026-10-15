@@ -8,8 +8,17 @@ import { drawPlate, plateFields } from './core/plate'
 import { initTheme } from './ui/theme'
 import { createState } from './ui/state'
 import { toast } from './ui/toast'
-import { renderRail, chipThumb } from './ui/rail'
+import { renderRail, styleThumb } from './ui/rail'
 import { renderFields } from './ui/fields'
+import {
+  activePhoto,
+  addPhotos,
+  forgetThumb,
+  removePhoto,
+  renderPhotoList,
+  selectPhoto,
+  type PhotoList,
+} from './ui/photos'
 import {
   controlSpecs,
   renderControls,
@@ -22,7 +31,7 @@ import {
 import { plaqueText } from './ui/plaque'
 import { loadCustom, saveCustom, browserStorage, sessionStore } from './ui/custom'
 import type { Size, Template, TextSlotId } from './core/types'
-import { wireInput } from './ui/input'
+import { releasePhoto, wireInput } from './ui/input'
 import { readExif } from './core/exif'
 import { isUnlocked, canExport } from './entitlements'
 import {
@@ -51,12 +60,30 @@ const ctx = cv.getContext('2d')
  * rather than a second opinion about it.
  */
 function canvasSize(template: Template): Size {
-  const photo = state.photo
+  const photo = activePhoto(state)
   return resolveSize(
     template.canvas.ratio,
     state.longEdge,
     photo ? { width: photo.width, height: photo.height } : undefined,
   )
+}
+
+/**
+ * The bare wall — the state the app boots in, and the state it returns to when
+ * the last photograph is removed.
+ *
+ * `canvas#cv:not([width])` is what draws that state (`app.css`), so the sizing
+ * has to be *un*-assigned here, not merely left alone: a canvas that kept its
+ * `width` attribute would keep the last poster visible above an empty list,
+ * which is a poster of a photograph the user just deleted. The surface is
+ * cleared with it, so nothing survives in the pixels either.
+ */
+function blankWall(): void {
+  if (!ctx) return
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.clearRect(0, 0, cv.width, cv.height)
+  cv.removeAttribute('width')
+  cv.removeAttribute('height')
 }
 
 /**
@@ -67,11 +94,14 @@ function canvasSize(template: Template): Size {
  */
 function draw(): void {
   const template = state.template
-  const photo = state.photo
-  // No photo, no poster: the default state is a bare wall (the shell's
-  // `canvas#cv:not([width])` guard hides the undrawn canvas), and sizing it
-  // here would hang a poster-sized rectangle of background on that empty wall.
-  if (!ctx || !template || !photo) return
+  const photo = activePhoto(state)
+  // No photo, no poster: the default state is a bare wall, and `blankWall` is
+  // what puts it back. Sizing the canvas here instead would hang a poster-sized
+  // rectangle of background on that empty wall.
+  if (!ctx || !template || !photo) {
+    blankWall()
+    return
+  }
 
   const size = canvasSize(template)
   state.size = size
@@ -89,7 +119,8 @@ function draw(): void {
     template,
     photos: [photo],
     text: state.text,
-    exif: state.exif,
+    // the plate reads the photograph's own EXIF — see `activePhoto`
+    exif: photo.exif,
   })
 }
 
@@ -127,12 +158,13 @@ function savedTemplates(): Template[] {
  * handler call, which is what makes a just-saved template appear without a
  * reload.
  *
- * The chips are prints — the user's own photograph, cropped to the chip (see
- * `chipThumb`) — and the header beside 样式 names the mount that is on and the
- * file it will produce. Both are painted here rather than at each call site
- * because both go stale at exactly the same moments: a new photograph, a new
- * pick, a save, a delete. A rail that showed the picture of the frame before
- * last is the same defect as a chip that says nothing.
+ * The chips are the styles themselves — a render of the poster each one makes
+ * of the photograph on the wall (see `styleThumb`) — and the header beside 样式
+ * names the mount that is on and the file it will produce. Both are painted
+ * here rather than at each call site because both go stale at exactly the same
+ * moments: a new photograph, a new pick, a save, a delete. A rail that showed
+ * the style before last, or the photograph before last, is the same defect as a
+ * chip that says nothing.
  */
 function paintRail(activeId: string | null): void {
   const saved = savedTemplates()
@@ -143,7 +175,7 @@ function paintRail(activeId: string | null): void {
     pick,
     new Set(saved.map((t) => t.id)),
     removeSaved,
-    chipThumb(state.photo),
+    (t) => styleThumb(t, activePhoto(state), state.longEdge),
   )
   const info = document.getElementById('rail-info')
   if (info) {
@@ -194,7 +226,7 @@ const controlHost = document.getElementById('control-row') as HTMLElement
  * the poster on screen rather than a second opinion about it.
  */
 function controlContext(t: Template): ControlContext {
-  const photo = state.photo
+  const photo = activePhoto(state)
   return {
     size: canvasSize(t),
     aspect: aspectOf(t.canvas.ratio, photo ? { width: photo.width, height: photo.height } : undefined),
@@ -281,6 +313,70 @@ function paintPlaque(t: Template): void {
   plaque.textContent = line
 }
 
+/**
+ * 照片 — the left column: the list, and the model's rules applied to the app's
+ * state (see `src/ui/photos.ts` for the rules themselves).
+ *
+ * The four functions here are the whole of how a photograph arrives, leaves and
+ * becomes the one on the wall. Every one of them ends in `photoChanged`, which
+ * is what keeps the poster, the rack of styles and the 画面 ceilings describing
+ * the same file: the chips are renders of the *active* photograph, and a saved
+ * `orig` template sizes its canvas from the file, so a switch or a removal
+ * moves all of them or none.
+ */
+const photoBox = document.getElementById('photo-list') as HTMLElement
+const photoCount = document.getElementById('photo-count') as HTMLElement
+
+function photoList(): PhotoList {
+  return { photos: state.photos, active: state.active }
+}
+
+function useList(next: PhotoList): void {
+  state.photos = next.photos
+  state.active = next.active
+}
+
+function paintPhotos(): void {
+  renderPhotoList(photoBox, photoList(), onSelectPhoto, onRemovePhoto)
+  photoCount.textContent =
+    state.photos.length === 0 ? '' : `${state.active + 1} / ${state.photos.length}`
+}
+
+function photoChanged(): void {
+  paintPhotos()
+  paintRail(state.template?.id ?? null)
+  paintControls()
+  draw()
+}
+
+function onSelectPhoto(index: number): void {
+  // `selectPhoto` hands back the list it was given when the pick is the one
+  // already on, so the comparison is against *that* list and not against a
+  // fresh read — `photoList()` builds a new object every call, and comparing
+  // with one would make this branch unreachable.
+  const current = photoList()
+  const next = selectPhoto(current, index)
+  if (next === current) return
+  useList(next)
+  photoChanged()
+}
+
+/**
+ * The × on a list row. The photograph goes, its blob URL goes with it (the list
+ * owns that lifetime — see `releasePhoto`), and the thumbnail cache forgets it.
+ * Removing the last photograph is not an error: the app's default state is a
+ * bare wall, and `draw` is what puts it back.
+ */
+function onRemovePhoto(index: number): void {
+  const { list, removed } = removePhoto(photoList(), index)
+  if (!removed) return
+  useList(list)
+  forgetThumb(removed)
+  releasePhoto(removed)
+  photoChanged()
+  toast(`已移除 ${removed.name}`)
+}
+
 const rail = document.getElementById('rail') as HTMLElement
 const drop = document.getElementById('drop') as HTMLElement
 const file = document.getElementById('file') as HTMLInputElement
@@ -288,25 +384,27 @@ const file = document.getElementById('file') as HTMLInputElement
 wireInput(
   drop,
   file,
-  (photo) => {
-    state.photo = photo
-    state.exif = photo.exif
-    // A photograph can resize the canvas — a saved template with an `orig`
-    // ratio is sized from the file — and the panel's ceilings are measured
-    // against the canvas, so the record is settled against the new one before
-    // anything draws. For the nine built-ins this is the identity: their ratios
-    // are constants, so the canvas a photo lands on is the canvas that was
+  (added) => {
+    useList(addPhotos(photoList(), added))
+    // The photograph can resize the canvas — a saved template with an `orig`
+    // ratio is sized from the file — and the 画面 ceilings are measured against
+    // the canvas, so the record is settled against the new one before anything
+    // draws. For the nine built-ins this is the identity: their ratios are
+    // constants, so the canvas a photograph lands on is the canvas that was
     // already there, and `settleTemplate` hands back the record it was given.
     if (state.template) {
       state.template = settleTemplate(state.template, controlContext(state.template))
     }
-    // The rail is prints of this photograph, so it is repainted here and not
-    // only on a pick: without this the chips stay blank mounts until the user
-    // happens to choose a style, which is the one moment they are not needed.
-    paintRail(state.template?.id ?? null)
-    paintControls()
-    draw()
-    toast(`已载入 ${photo.width} × ${photo.height}`)
+    photoChanged()
+    // `added[0]` and not the last one: `addPhotos` puts the wall on the *first*
+    // of the batch, and a toast naming a photograph the user is not looking at
+    // is worse than no toast.
+    const shown = added[0]!
+    toast(
+      added.length === 1
+        ? `已载入 ${shown.width} × ${shown.height}`
+        : `已载入 ${added.length} 张，当前 ${shown.width} × ${shown.height}`,
+    )
   },
   (msg) => toast(msg),
   readExif,
@@ -314,7 +412,7 @@ wireInput(
 
 document.getElementById('save')?.addEventListener('click', async () => {
   const template = state.template
-  const photo = state.photo
+  const photo = activePhoto(state)
   if (!photo || !template) {
     toast('请先载入图片')
     return
@@ -335,7 +433,7 @@ document.getElementById('save')?.addEventListener('click', async () => {
       template,
       photos: [photo],
       text: state.text,
-      exif: state.exif,
+      exif: photo.exif,
       want: 2,
     })
     // The scale that was *drawn*, not the one that was asked for: the export
@@ -480,6 +578,7 @@ document.getElementById('saveTpl')?.addEventListener('click', () => {
   else toast(`已保存模板：${name}`)
 })
 
+paintPhotos()
 paintRail(state.template?.id ?? null)
 paintFields()
 paintControls()
@@ -523,16 +622,15 @@ if (new URLSearchParams(location.search).get('demo') === '1') {
   }
   const im = new Image()
   im.onload = () => {
-    state.photo = { el: im, width: im.naturalWidth, height: im.naturalHeight, name: 'demo', exif: null }
-    state.exif = null
-    // same reason as the loaded-photo path above: the chips are prints of this
-    // photograph, and the demo is the front door — blank mounts there would be
-    // the defect rather than a corner of it. The sliders are rebuilt for the
-    // same reason: their ceilings are measured against the canvas, and the
-    // canvas is what just arrived.
-    paintRail(state.template?.id ?? null)
-    paintControls()
-    draw()
+    // Through the same list and the same repaint as a photograph the user
+    // loaded: the demo is the front door, and a front door that skipped the
+    // list would leave the left column empty with a poster on the wall.
+    useList(
+      addPhotos(photoList(), [
+        { el: im, width: im.naturalWidth, height: im.naturalHeight, name: 'demo', exif: null },
+      ]),
+    )
+    photoChanged()
   }
   im.src = d.toDataURL()
 

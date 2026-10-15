@@ -44,31 +44,62 @@
 </head>
 <body>
 <div class="app">
-  <main class="stage" id="stage">
-    <canvas id="cv"></canvas>
-    <div class="toast" id="toast"></div>
-  </main>
-
-  <aside class="dock">
+  <!-- 照片 — the left column: every photograph loaded this session, one row
+       each, with the wall's own marked. The list is built by `src/ui/photos.ts`
+       from the state, and the drop zone is pinned under it rather than above,
+       so what a returning user does first (switch photograph) is at the top of
+       the column and what a new user does first (add one) is the last row they
+       reach. -->
+  <aside class="photos" id="photos">
+    <div class="col-h"><b>照片</b><span id="photo-count"></span></div>
+    <div class="photo-list" id="photo-list"></div>
     <!-- `#file` is `hidden`, so this div is the only way to a photo for a
          keyboard user: it needs a tab stop and a button role, and `wireInput`
          opens the input on Enter and Space as well as on click. -->
-    <div class="drop" id="drop" tabindex="0" role="button">把照片放到墙上<small>点击选择，也可以拖进来或粘贴</small></div>
+    <div class="drop" id="drop" tabindex="0" role="button">添加照片<small>点击选择多张，也可以拖进来或粘贴</small></div>
     <!-- A sibling of `.drop`, never a child of it: `wireInput` opens this input
          from `.drop`'s own click handler, so an input nested inside the zone
          would be clicked from within the dispatch of the click it caused —
-         a cycle. -->
-    <input type="file" id="file" accept="image/*" hidden>
+         a cycle. `multiple` because the list is a list. -->
+    <input type="file" id="file" accept="image/*" multiple hidden>
+  </aside>
 
-    <div class="rail-h"><b>样式</b><span id="rail-info"></span></div>
-    <div class="rail" id="rail"></div>
-    <!-- The premium plaque (spec §10): it names the pack when a template is
-         premium *and* locked, and v1 ships nothing gated, so it is wired and
-         never shown. It carries its own `hidden` rather than being created on
-         demand: the picker writes two properties on an element that is always
-         in the dock, which is testable, where an element that appears and
-         disappears is only observable while it is there. -->
-    <div class="plaque-row" id="plaque" hidden></div>
+  <!-- The wall, and the rack of styles beneath it. The styles sit below the
+       poster rather than in a side column because choosing one is a judgement
+       about what is on the wall, and a strip of previews reads left-to-right as
+       alternatives to the thing directly above them. -->
+  <main class="stage" id="stage">
+    <div class="wall" id="wall">
+      <canvas id="cv"></canvas>
+      <div class="toast" id="toast"></div>
+    </div>
+
+    <div class="styles" id="styles">
+      <div class="rail-h"><b>样式</b><span id="rail-info"></span></div>
+      <!-- One chip per style, each a small render of the poster that style
+           makes of the photograph in hand (see `src/ui/rail.ts`). -->
+      <div class="rail" id="rail"></div>
+      <!-- The premium plaque (spec §10): it names the pack when a template is
+           premium *and* locked, and v1 ships nothing gated, so it is wired and
+           never shown. It belongs with the styles rather than in a side column:
+           what it names is the style that is on. It carries its own `hidden`
+           rather than being created on demand: the picker writes two properties
+           on an element that is always in the DOM, which is testable, where an
+           element that appears and disappears is only observable while it is
+           there. -->
+      <div class="plaque-row" id="plaque" hidden></div>
+    </div>
+  </main>
+
+  <aside class="dock" id="dock">
+    <!-- 保存 first: it is the action this whole screen exists for, and the top
+         right corner is where it is looked for. 存为模板 is the detour beside
+         it, in the secondary style — `.btn-primary`'s `flex: 1` gives the save
+         the larger half of the row. -->
+    <div class="acts">
+      <button class="btn btn-primary" id="save">保存</button>
+      <button class="btn" id="saveTpl">存为模板</button>
+    </div>
 
     <!-- 文字 — one input per slot the current template prints (see
          `src/ui/fields.ts`). The row is built by the picker, not written here,
@@ -92,14 +123,6 @@
     <div class="controls" id="controls" data-adjusted="false">
       <div class="rail-h"><b>画面</b><span class="ctl-note">已调整 · 存为模板可保留</span></div>
       <div class="ctl-row" id="control-row"></div>
-    </div>
-
-    <div class="acts">
-      <!-- Secondary, not primary: saving a template is a detour from the one
-           action this screen exists for, and `.btn-primary`'s `flex: 1` would
-           give the detour the larger half of the dock. -->
-      <button class="btn" id="saveTpl">存为模板</button>
-      <button class="btn btn-primary" id="save">保存</button>
     </div>
   </aside>
 </div>

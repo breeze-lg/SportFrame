@@ -1,68 +1,114 @@
-import { cover } from '../core/geometry'
+import { resolveSize } from '../core/geometry'
+import { render } from '../core/render'
 import type { Photo, Template } from '../core/types'
 
-/** The chip's box in CSS pixels, and the scale its print is cut at. */
-const CHIP_W = 50
-const CHIP_H = 62
+/** The chip's long edge in CSS pixels — the design sheet's 62px box — and the
+ *  resolution its preview is rendered at. */
+const CHIP_LONG = 62
 const CHIP_DPR = 2
 
 /**
- * The chip's print: the user's own photograph, cover-cropped to the chip box —
- * the treatment `design/style-direction.html` specifies for `.print .rawshot`
- * (`background-size: cover; background-position: 50% 44%`), and the reason the
- * rail reads as a rack of prints rather than a row of blank mounts.
+ * A style's chip: the poster that style would make of the photograph in hand,
+ * rendered and scaled down.
  *
- * Cropped here, once, rather than handing the browser the photograph as a CSS
- * background: nine chips sharing one `url()` would carry nine copies of the
- * same multi-megabyte string through style recalculation, and the browser would
- * re-crop a 27 MP source nine times on every repaint. `cover` is the same
- * crop arithmetic the poster's own blur background uses, so the rack and the
- * wall agree about what the photograph looks like.
+ * The rail used to draw the photograph itself, cover-cropped to the chip
+ * (`chipThumb`, the design sheet's `.print .rawshot`), which left nine chips
+ * differing only by the selected ring — a rack that cannot say what any of the
+ * styles looks like, which is the one thing a rack of styles is for. So the
+ * chip is now a *render*: `render` at the poster's own layout size, drawn into
+ * a canvas a chip's long edge across.
  *
- * The 44% vertical bias is the design's and it is deliberate: a crop centred
- * dead-on a portrait cuts the top off, which is where a face usually is.
+ * The scale is what makes a miniature honest. `render` takes a logical `size`
+ * and a device scale `k`, and every absolute measure in it — the mat, the
+ * radius, the shadow, the blur, the type — is multiplied by `k`. So one
+ * `k = chip / longEdge` renders *the same poster*, smaller, with no second
+ * layout path and nothing re-tuned per size. (This is the piece the README used
+ * to call impossible: the frame geometry is absolute pixels, but they are
+ * absolute in `k`, and a chip is a small `k`.)
  *
- * Memoised on the source URL, because `paintRail` runs on every pick and the
- * photograph — unlike the rail — has not changed. Returns `null` with no
- * photograph, which leaves the chip as the blank mount the default state wants.
+ * `text: {}`, deliberately: the words belong to the user and not to the style
+ * (see `fields.ts`), and re-rendering ten posters on every keystroke would be
+ * the cost of a claim nobody made. What a chip has to show is the mount — the
+ * mat, the backdrop, the ratio.
  */
-let thumbCache: { src: string; url: string | null } | null = null
+export type StyleThumb = { url: string | null; w: number; h: number }
 
-export function chipThumb(photo: Photo | null): string | null {
-  if (!photo || photo.width <= 0 || photo.height <= 0) return null
-  const src = photo.el.src
-  if (thumbCache && thumbCache.src === src) return thumbCache.url
+export function styleThumb(t: Template, photo: Photo | null, longEdge: number): StyleThumb {
+  // The poster's own layout, from the same two inputs `draw` uses: the ratio
+  // (against the photograph, for a saved `orig` template) and the long edge.
+  const size = resolveSize(t.canvas.ratio, longEdge, photo ?? undefined)
+  const k = (CHIP_LONG * CHIP_DPR) / longEdge
+  const w = Math.max(1, Math.round(size.W * k))
+  const h = Math.max(1, Math.round(size.H * k))
+  return {
+    // A poster is a photograph framed; with no photograph there is nothing to
+    // preview. The box is still this template's own shape, which is the one
+    // thing a blank chip can honestly say — 电影感 is a wide strip and 竖版故事
+    // is a tall one before anything has been loaded.
+    url: photo ? preview(t, photo, size, k, w, h) : null,
+    // CSS pixels: the bitmap is CHIP_DPR times the box it is drawn into, so it
+    // is exactly 1:1 on a retina screen and a clean 2:1 reduction on a 1× one.
+    w: w / CHIP_DPR,
+    h: h / CHIP_DPR,
+  }
+}
+
+/**
+ * The previews, keyed by everything that can change one: the template's
+ * geometry, the photograph, and the box. Cleared oldest-first at a cap, because
+ * a session that loads photographs and moves sliders would otherwise hold a
+ * bitmap for every combination it passed through.
+ */
+const previews = new Map<string, string | null>()
+const PREVIEW_CAP = 60
+
+function preview(
+  t: Template,
+  photo: Photo,
+  size: { W: number; H: number },
+  k: number,
+  w: number,
+  h: number,
+): string | null {
+  const key = [
+    t.id,
+    t.canvas.ratio,
+    JSON.stringify(t.frame),
+    JSON.stringify(t.background),
+    photo.el.src,
+    `${w}x${h}`,
+  ].join('|')
+  if (previews.has(key)) return previews.get(key) ?? null
 
   let url: string | null = null
   const c = document.createElement('canvas')
-  c.width = CHIP_W * CHIP_DPR
-  c.height = CHIP_H * CHIP_DPR
+  c.width = w
+  c.height = h
   const ctx = c.getContext('2d')
   if (ctx) {
-    const box = cover(photo.width, photo.height, c.width, c.height, 1)
-    // Both offsets are negative by construction (`cover` never returns a box
-    // smaller than the canvas) and match CSS `background-position` semantics:
-    // 0% is the image's top-left edge flush with the box's, 50%/44% is the one
-    // the design asks for.
-    ctx.drawImage(
-      photo.preview ?? photo.el,
-      (c.width - box.w) * 0.5,
-      (c.height - box.h) * 0.44,
-      box.w,
-      box.h,
-    )
+    // The chip is a heavy reduction of the poster (a 1152px canvas into ~99px),
+    // so the quality of the one resample in it is the whole of its legibility.
+    ctx.imageSmoothingQuality = 'high'
+    render({ ctx, size, k, template: t, photos: [photo], text: {}, exif: null })
     url = c.toDataURL('image/png')
   }
-  thumbCache = { src, url }
+
+  if (previews.size >= PREVIEW_CAP) {
+    const oldest = previews.keys().next().value
+    if (oldest !== undefined) previews.delete(oldest)
+  }
+  previews.set(key, url)
   return url
 }
 
 /**
  * The template rail: one chip per template, drawn as a print rather than a
  * labelled button — the wall is the interface, and the rail is the rack of
- * mounts beside it. `thumb` is the photograph, cropped to the chip (see
- * `chipThumb`); the name is carried on `title` for a pointer and on
- * `aria-label` for everything that reads the page rather than looking at it.
+ * mounts beside it. `thumb` answers with the *style's* own preview (`styleThumb`)
+ * for a given template: a small render of the poster that template makes, and
+ * the box it should be drawn in. The box is the template's canvas ratio, so the
+ * rack says which styles are tall, wide or square even before there is a
+ * photograph to fill them. The name is carried on `title` and `aria-label`.
  *
  * `aria-pressed` rather than `aria-selected`: these are toggle buttons in a
  * group, and `selected` is only meaningful inside a listbox or grid.
@@ -87,7 +133,7 @@ export function renderRail(
   onPick: (id: string) => void,
   customIds: ReadonlySet<string> = new Set(),
   onDelete?: (id: string) => void,
-  thumb: string | null = null,
+  thumb?: (t: Template) => StyleThumb | null,
 ): void {
   host.textContent = ''
   for (const t of templates) {
@@ -108,12 +154,21 @@ export function renderRail(
     b.type = 'button'
     b.title = t.name
     // The print itself. Inline rather than a class, because the image is the
-    // user's and a stylesheet cannot know its URL; `--surface` behind it stays
-    // the chip's colour until a photograph exists. `.photo` is what tells
-    // `app.css` there is picture content under the marks.
-    if (thumb) {
-      b.style.backgroundImage = `url("${thumb}")`
-      b.classList.add('photo')
+    // user's photograph rendered through this template and a stylesheet cannot
+    // know its URL; `--surface` behind it stays the chip's colour until a
+    // photograph exists. `.photo` is what tells `app.css` there is picture
+    // content under the marks.
+    const shot = thumb?.(t) ?? null
+    if (shot) {
+      // The box is the template's canvas ratio, in CSS pixels. Set from the
+      // preview rather than from a stylesheet constant so the runner stays
+      // exactly as wide as the poster it shows.
+      b.style.width = `${shot.w}px`
+      b.style.height = `${shot.h}px`
+      if (shot.url) {
+        b.style.backgroundImage = `url("${shot.url}")`
+        b.classList.add('photo')
+      }
     }
     b.setAttribute('aria-label', t.name)
     b.setAttribute('aria-pressed', t.id === activeId ? 'true' : 'false')

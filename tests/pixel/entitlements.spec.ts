@@ -31,7 +31,7 @@ const plaque = (page: Page) => page.locator('#plaque')
 test('the dock carries a plaque, and v1 shows it for nothing', async ({ page }) => {
   await page.goto('/')
 
-  await expect(page.locator('.dock .plaque-row')).toHaveCount(1)
+  await expect(page.locator('.styles .plaque-row')).toHaveCount(1)
   // directly after the rail: the plaque belongs to the chip that is selected
   await expect(page.locator('#rail + #plaque')).toHaveCount(1)
 

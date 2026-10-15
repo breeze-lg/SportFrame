@@ -1,13 +1,22 @@
 # 模糊画框 / Frame & Mat
 
-Turn a good photograph into a framed poster worth posting. Drop in a photo;
-the app puts a white mat, a shadow, a background treatment, and a camera spec
-plate around it, and exports a PNG at social-ready resolution.
+Turn a good photograph into a framed poster worth posting. Drop in a photo; the
+app puts a white mat, a shadow, a background treatment, and a camera spec plate
+around it, and exports a PNG at social-ready resolution.
+
+Photographs are a list. Load one or a dozen — the picker takes several at once,
+and a drop or a paste can carry a folder's worth — and the left column keeps them
+with the one on the wall marked, switchable, and removable. The wall is always
+one of them; removing the last one returns the app to the bare wall it boots on.
+
+Styles are a rack of previews under the wall: each chip is a small render of the
+poster that style would make of the photograph in hand, so the mat, the backdrop
+and the canvas shape are all visible before you pick one.
 
 Words are optional and typed: the 文字 block offers exactly the slots the chosen
 style prints — 经典 takes a title and a subtitle, 拍立得 and 样张 a title in the
 mat, 留白 none at all — and what you type follows you from style to style. The
-camera plate needs no typing: it is read from the photograph's own EXIF.
+camera plate needs no typing: it is read from the active photograph's own EXIF.
 
 The mount's own geometry is adjustable too. 画面 offers one slider per number the
 current template can change — 前景大小, 水平位置/垂直位置, 白边/下白边, and (on a
@@ -50,14 +59,52 @@ be served over HTTP — ES modules do not load from `file://`.
 | Query | Effect |
 |---|---|
 | `?dev=1` | Exposes `window.__frame`, `__frameCore`, `__frameTemplates`, `__frameCeremony`, `__frameExport` for tests and console poking |
-| `?demo=1` | Loads a procedurally generated photo — no file needed to try the app |
+| `?demo=1` | Loads a procedurally generated photograph into the list — no file needed to try the app |
 | `?demo=1&tpl=spec-sheet` | The demo photo with a named template; `?tpl` is read only alongside `?demo=1` |
 
 ## Layout
 
+The shell is three columns in a grid: the photographs on the left, the wall with
+the rack of styles under it in the middle, and the actions and adjustments on the
+right, 保存 at its top. `tests/pixel/layout.spec.ts` asserts those relationships
+as geometry — left of, below, corner of — rather than as a screenshot, so they
+hold at any window size. On a phone the three stack (wall first) and each panel
+carves out its own height and scrolls.
+
 `src/core/` is framework-free and **never imports from `src/ui/`**. That
-boundary is what keeps the canvas math testable, and it is the one
-architectural rule in this codebase.
+boundary is what keeps the canvas math testable, and it is the one architectural
+rule in this codebase.
+
+Each panel is a pure model with a dumb DOM half beside it, and the model is where
+the rules live:
+
+| module | the model | the DOM |
+|---|---|---|
+| `src/ui/photos.ts` | `addPhotos` / `removePhoto` / `selectPhoto` / `activePhoto` — which photograph is on, after any mutation | the list rows |
+| `src/ui/rail.ts` | `styleThumb` — the preview of a style | the rack of chips |
+| `src/ui/fields.ts` | — (the slots are the template's) | the 文字 inputs |
+| `src/ui/controls.ts` | `controlSpecs` / `setControl` / `settleTemplate` — the whole write path, clamped | the sliders |
+
+That split is the reason `tests/unit/` can answer for the arithmetic (index
+shifts on deletion, slider ceilings, preview keys) in `node`, and why the browser
+suites are only about what reaches the wall.
+
+## The style previews
+
+A chip is a render, not a crop: `styleThumb` calls the same `render` the wall
+does, at the poster's own logical size and at `k = chip / longEdge`. Every
+absolute measure in the renderer is absolute in `k` — the mat, the radius, the
+shadow, the blur, the type — so one small `k` produces *the same poster*,
+smaller, with no second layout path and nothing re-tuned per size. The chip's box
+is the canvas ratio at that scale, so the rack says which styles are wide, tall
+or square before anything is loaded.
+
+Previews are memoised on everything that can change one (the template's geometry,
+the photography, the box) and capped at sixty, because a session that loads
+photographs and drags sliders would otherwise hold a bitmap for every combination
+it passed through. The words are **not** in a preview: they belong to the user
+rather than to the style, and re-rendering ten posters per keystroke would be the
+cost of a claim nobody made.
 
 ## Pixel snapshots
 
@@ -87,7 +134,9 @@ Maintainer note: the mat fit-guard in `tests/unit/templates.test.ts` lays every
 template out at 1152×1440 — `resolveSize(ratio, 1440)`, the default of
 `state.longEdge`, hardcoded in the test rather than read from the app. Nothing
 writes `longEdge` today, so the two agree; give it a writer (a size picker) and
-the guard goes on checking 1440 until you change it by hand.
+the guard goes on checking 1440 until you change it by hand. The style previews
+read it too: their scale is `chip / longEdge`, so a longer edge is a sharper
+chip and a slower rail.
 
 ## The 画面 panel
 
@@ -115,16 +164,17 @@ that, and both are load-bearing:
 
 ## Known limitations
 
-**A rail chip shows the photograph, not a preview of the style.** Each chip is
-the user's own photo cover-cropped to the chip, as `design/style-direction.html`
-specifies for `.print .rawshot`, so the nine chips differ only by the selected
-ring and the brass corner. A true per-style thumbnail would have to render each
-template small — and the frame geometry is absolute pixels tuned to the 1440
-long edge (see above), so a 50×62 render of 样张 would be nonsense. Decoupling
-the geometry from the long edge is the prerequisite, not a chip-level fix. The
-画面 panel sharpens this: a template saved from 经典 with a fat mat and a smaller
-photograph is indistinguishable from 经典 on the rail, and only the rail's own
-header line names it. That is the shape this limitation takes now.
+**The photograph list holds every photograph decoded.** 48 MB per 12 MP frame,
+held as a detached `<img>` plus its blob URL for as long as the row is in the
+list — so a folder of forty dropped in at once is roughly 2 GB of bitmaps and the
+browser will not survive it. There is no cap and no eviction, which is the
+honest state of it: `removePhoto` is what gives the memory back, one photograph
+at a time. Previews are the same story in miniature (a capped sixty of them, see
+above).
+
+**The list is for switching, not for collage.** `render` draws `photos[0]` and no
+more; the other photographs are reachable through the wall one at a time. Collage
+is spec stages 5-6 and unbuilt — see below.
 
 **存为模板 saves the style, not the words.** The template record has no room for
 text values, so a saved template brings back its typography and the fields come
@@ -164,7 +214,7 @@ were worth taking. The 画面 panel adjusts the *mount* — how large the photog
 is, where it sits, how deep the mat, how the backdrop is treated — and stops
 there: nothing in this app crops, straightens or grades the photograph itself,
 and no panel value changes a pixel of the image. `layout` is carried in the data
-model and nothing reads it: `render` draws `photos[0]` and no more.
+model and nothing reads it: `render` draws the active photograph and no more.
 
 Payments are a seam only — one boolean (`Template.premium`) and two functions in
 `src/entitlements.ts`, both answering `true` in v1, wired at two call sites in

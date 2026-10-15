@@ -12,9 +12,13 @@ body {
 /* the export ceremony — spec §8.
    `visibility: hidden`, not only `opacity: 0`: an invisible-but-present control
    is still in the tab order, so a keyboard user tabbing during the ceremony
-   would reach dock controls they cannot see. `visibility` removes it from the
-   tab order and from assistive tech without reflowing the layout behind the
-   ceremony — the dock stays in the DOM (that is the whole point). */
+   would reach chrome they cannot see. `visibility` removes it from the tab order
+   and from assistive tech without reflowing the layout behind the ceremony —
+   the columns stay in the DOM (that is the whole point). All three of them:
+   the wall is flanked by the photograph list and the adjustments, and a
+   ceremony that dimmed two of the three would leave the third live. */
+body.ceremony-open .photos,
+body.ceremony-open .styles,
 body.ceremony-open .dock { opacity: 0; pointer-events: none; visibility: hidden; }
 .ceremony {
   position: fixed;
@@ -66,15 +70,23 @@ body.ceremony-open .dock { opacity: 0; pointer-events: none; visibility: hidden;
   .ceremony { transition: none; }
 }
 
-/* the shell — frame first: the wall takes the room, the dock carries the rail
-   and the actions, and nothing else is on screen in stages 1-4. */
+/* the shell — three columns: the photographs on the left, the wall with the
+   rack of styles under it in the middle, and the actions and adjustments on the
+   right. A grid rather than nested flex rows, because each column keeps its own
+   width and its own scroll while the middle one takes what is left. */
 .app {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr) 340px;
   height: 100vh;
   height: 100dvh;
 }
 .stage {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.wall {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -91,14 +103,102 @@ canvas#cv { max-width: 92%; max-height: 92%; box-shadow: var(--deep); border-rad
    rendering fault, not an empty state. Assigning `canvas.width` (what sizing
    the canvas for a photo does) reflects to the attribute and reveals it. */
 canvas#cv:not([width]) { visibility: hidden; }
-.dock {
+
+/* 样式 — the rack under the wall, and the only place this app says what it can
+   do. Centred: a strip of previews reads left-to-right as alternatives to the
+   poster directly above it. */
+.styles {
   flex: none;
-  background: var(--surface);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 12px;
   border-top: 1px solid var(--bevel);
-  padding: 14px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface);
+}
+.styles .rail { padding-bottom: 0; }
+
+/* 照片 — the left column. It scrolls on its own, and the list grows downward
+   from a fixed heading while the drop zone rides under it, so a long session's
+   list never pushes the way to add another photograph off the screen. */
+.photos {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 12px calc(14px + env(safe-area-inset-bottom, 0px));
+  border-right: 1px solid var(--bevel);
+  background: var(--surface);
+  overflow-y: auto;
+}
+.col-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.col-h b { font-weight: 400; font-size: 12.5px; color: var(--label); }
+.col-h span { font-family: var(--mono); font-size: 10.5px; color: var(--quiet); }
+.photo-list { display: flex; flex-direction: column; gap: 6px; }
+.ph-empty { font-size: 12px; color: var(--faint); }
+.ph { position: relative; display: flex; align-items: center; gap: 2px; }
+/* The row carries a 46px square crop of the photograph and its name: a crop
+   alone says nothing about which file it is, which is the whole job of a list
+   that can hold a dozen of them. The select border is the same language the
+   rail's `.print.on` uses — the ink hairline plus a lift — so "this one is on"
+   looks the same in both places. */
+.ph-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 3px 5px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: none;
+  color: var(--body);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.ph-pick.on { border-color: var(--ink); background: var(--rule); box-shadow: var(--lift); }
+.ph-thumb {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border: 1px solid var(--bevel);
+  border-radius: 2px;
+  background-color: var(--device);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.ph-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ph-del {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: none;
+  color: var(--faint);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ph-del:hover { color: var(--ink); background: var(--rule); }
+
+.dock {
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding: 14px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+  border-left: 1px solid var(--bevel);
+  background: var(--surface);
+  overflow-y: auto;
 }
 .drop {
   border: 1px dashed var(--bevel);
@@ -217,16 +317,21 @@ canvas#cv:not([width]) { visibility: hidden; }
 .print {
   position: relative;
   flex: none;
+  /* The box is the style's own canvas ratio, in CSS pixels, set inline by
+     `renderRail` from the preview it asked for. The 50×62 here is the fallback
+     for a rail drawn with no previews at all — a caller that cannot render —
+     and it is the box the design sheet gives `.print`. */
   width: 50px;
   height: 62px;
   border: 1px solid var(--bevel);
   border-radius: 2px;
   background-color: var(--surface);
-  /* The print inside the mount: the user's photograph, cropped to this box and
-     set inline by `renderRail` (see `chipThumb`). `cover` on an image already
-     cut to the chip's own ratio is an exact fit, and it keeps the chip correct
-     if the box ever changes without the crop. */
-  background-size: cover;
+  /* The print inside the mount: a render of this style's own poster, already
+     the chip's aspect, set inline by `renderRail` (see `styleThumb`). `100%
+     100%` rather than `cover` — the bitmap *is* the poster, so there is nothing
+     to crop, and cropping a preview would hide the mat, which is the one thing
+     a preview exists to show. */
+  background-size: 100% 100%;
   background-position: center;
   background-repeat: no-repeat;
   cursor: pointer;
@@ -346,47 +451,58 @@ canvas#cv:not([width]) { visibility: hidden; }
 .toast.show { opacity: 1; }
 
 @media (min-width: 901px) {
-  .app { flex-direction: row; }
-  .stage { order: 1; }
-  .dock {
-    order: 0;
-    flex: none;
-    width: 340px;
-    border-top: 0;
-    border-right: 1px solid var(--bevel);
-    overflow-y: auto;
-  }
-  /* Nine prints, all of them visible. The rail scrolls sideways on a phone,
-     where a thumb-swiped row is the right gesture, but the dock is 340px wide
-     and a scrolling rack hides the last styles behind a scrollbar the platform
-     does not even draw — a picker whose options cannot be seen is not a picker.
-     Wrapping is the same nine prints in two rows. */
+  /* The rack wraps on a desk, and is centred. Both are the same decision: the
+     stage here is wide enough to hold every style, and a style hidden behind a
+     sideways scroll is a style nobody picks. Centring is safe only because it
+     wraps — a centred row that *overflows* clips its first chip where no scroll
+     can reach it, which is why the phone leg below leaves it left-aligned. */
   .rail {
     flex-wrap: wrap;
     overflow-x: visible;
     row-gap: 10px;
+    justify-content: center;
   }
 }
 
-/* On a phone the dock is a column under the wall, and 画面 gave it up to eight
-   more rows: a drop zone, nine prints, two inputs, eight sliders and the
-   actions add up to more than a screen, and without a cap the wall would be
-   squeezed to whatever was left. 62vh keeps the poster the larger half and
-   gives the controls their own scroll. Only below the breakpoint: on a desk the
-   dock is its own column and already scrolls.
-   `flex: none` on the rows is what makes the cap a scroll rather than a
-   squeeze — a capped flex column shrinks its children to fit, and the rail is
-   the one row that shrinks all the way: its own `overflow-x` gives it an
-   automatic minimum height of zero, so nine 62px prints collapse into a 2px
-   line and the picker disappears. */
+/* On a phone the three columns become a stack, and the poster keeps the top of
+   it: the wall is what the screen is for, and the column that serves it comes
+   before the ones that adjust it. Each panel then carves out its own height and
+   scrolls, so a session with a dozen photographs and eight sliders cannot push
+   the wall off the screen — the page grows and scrolls, and nothing gets
+   squeezed. */
 @media (max-width: 900px) {
-  .dock { max-height: 62vh; max-height: 62dvh; overflow-y: auto; }
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  body { height: auto; min-height: 100%; }
+  .stage { order: 1; min-height: 58vh; min-height: 58dvh; }
+  .photos {
+    order: 2;
+    max-height: 30vh;
+    max-height: 30dvh;
+    border-right: 0;
+    border-top: 1px solid var(--bevel);
+  }
+  .dock {
+    order: 3;
+    max-height: 60vh;
+    max-height: 60dvh;
+    border-left: 0;
+    border-top: 1px solid var(--bevel);
+  }
+  /* `flex: none` on the rows is what makes those caps a scroll rather than a
+     squeeze — a capped flex column shrinks its children to fit, and the rail is
+     the one row that shrinks all the way: its own `overflow-x` gives it an
+     automatic minimum height of zero, so nine 62px prints collapse into a 2px
+     line and the picker disappears. */
   .dock > * { flex: none; }
-  /* And the one action that must never be behind the scroll keeps its own
-     footing at the bottom of the scrollport: on a phone the dock now holds
-     nine prints, two inputs and eight sliders, and 保存 is the screen's whole
-     purpose. The opaque background is the dock's own, so the rows scrolling
-     under it are covered rather than showing through. */
+  /* The one action that must never be behind a scroll keeps its own footing at
+     the bottom of the scrollport: 保存 is the screen's whole purpose. The
+     opaque background is the dock's own, so the rows scrolling under it are
+     covered rather than showing through. */
   .acts {
     position: sticky;
     bottom: 0;
