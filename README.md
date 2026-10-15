@@ -27,6 +27,12 @@ computed in `src/core/limits.ts`. Nothing you change there is saved until you
 press 存为模板; the note beside the heading says 已调整 until you do, and picking
 the mount again is how the numbers as authored come back.
 
+A refresh comes back to where you left off. The photographs, the one that was on
+the wall, the mount, the words and the numbers are all written as you work, so a
+stray ⌘R, a crash, or a phone that reclaims the tab costs nothing. The original
+files are stored, not a re-encode of them, so a restored photograph still knows
+its own EXIF.
+
 Photos never leave the device. There is no backend.
 
 ## Develop
@@ -106,6 +112,40 @@ it passed through. The words are **not** in a preview: they belong to the user
 rather than to the style, and re-rendering ten posters per keystroke would be the
 cost of a claim nobody made.
 
+## What this app stores, and where
+
+Four things are kept on the device. Three are `localStorage` keys and one is an
+IndexedDB database; all of them are per-origin, and none of them is a server's.
+
+| what | where | kept in `src/` |
+|---|---|---|
+| the theme | `localStorage` `frame-app-theme` | the head script in `index.html`, `src/ui/theme.ts` |
+| saved templates (存为模板) | `localStorage` `frame-app-custom-v1` | `src/ui/custom.ts` |
+| the session: the photographs, which one is on the wall, the mount, the words, the numbers | `localStorage` `frame-app-session-v1` | `src/ui/session.ts` |
+| the photographs' own bytes | IndexedDB `frame-app-photos` | `src/ui/session.ts` |
+
+The session is two stores because it holds two sizes of thing: the *record* is a
+few hundred bytes of JSON, read synchronously before the first paint so the app
+comes up wearing the mount the user left it on; the *bytes* are tens of megabytes
+and have to be read back and decoded off the event loop, so the wall is bare for
+a moment and then filled in. The record is what knows the list's order, and
+`active` is an index into it, so the record's `photos` is always one entry per
+photograph in the list — an entry with no key is a photograph with no bytes
+behind it, either one whose store is still in flight or one the caps evicted.
+
+The caps are `MAX_PHOTOS` (24) and `MAX_BYTES` (256 MB), and past either one the
+oldest photographs stop coming back — oldest first, because the list is
+append-only and what has been there longest is what the user has already looked
+at. The record is written on every edit (a keystroke, a slider tick, a pick, a
+photograph added or removed) rather than on a debounce, because a record that
+lags by one edit restores the wrong poster, and a few hundred bytes of JSON is
+not worth a timer.
+
+Every path degrades rather than throwing: a refused IndexedDB, a quota that
+refuses a write, a record an older build wrote, a blob that will not decode. A
+session that cannot be restored is a fresh session, which is where the app
+started anyway.
+
 ## Pixel snapshots
 
 `tests/pixel/__screenshots__/` holds **nine** goldens — one per built-in
@@ -164,13 +204,17 @@ that, and both are load-bearing:
 
 ## Known limitations
 
-**The photograph list holds every photograph decoded.** 48 MB per 12 MP frame,
-held as a detached `<img>` plus its blob URL for as long as the row is in the
-list — so a folder of forty dropped in at once is roughly 2 GB of bitmaps and the
-browser will not survive it. There is no cap and no eviction, which is the
-honest state of it: `removePhoto` is what gives the memory back, one photograph
-at a time. Previews are the same story in miniature (a capped sixty of them, see
-above).
+**The list is capped where it persists, not where it lives.** Every photograph
+loaded is decoded and held in memory — 48 MB per 12 MP frame — for as long as its
+row is in the list, and there is no cap on that: a folder of forty dropped in at
+once is roughly 2 GB of bitmaps and the browser will not survive it. What *is*
+capped is what comes back after a refresh: 24 photographs or 256 MB, oldest
+evicted first. So the two limits are different numbers, and the one a user meets
+first is the browser's. A photograph whose bytes were evicted stays in the list —
+it is the user's, and the wall can still draw it — and is simply not there after
+the next reload, which is what the one-off 存储已满 toast is about. Restoring a
+full session re-decodes every photograph in it, so a slow device shows a bare wall
+for a second or two before the list fills in.
 
 **The list is for switching, not for collage.** `render` draws `photos[0]` and no
 more; the other photographs are reachable through the wall one at a time. Collage

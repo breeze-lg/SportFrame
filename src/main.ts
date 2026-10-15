@@ -30,8 +30,20 @@ import {
 } from './ui/controls'
 import { plaqueText } from './ui/plaque'
 import { loadCustom, saveCustom, browserStorage, sessionStore } from './ui/custom'
-import type { Size, Template, TextSlotId } from './core/types'
+import type { Photo, Size, Template, TextSlotId } from './core/types'
 import { releasePhoto, wireInput } from './ui/input'
+import {
+  MAX_PHOTOS,
+  dropBytes,
+  forgetKey,
+  loadSession,
+  putBytes,
+  restorePhotos,
+  restoredActive,
+  saveSession,
+  sessionOf,
+  type StoredPhoto,
+} from './ui/session'
 import { readExif } from './core/exif'
 import { isUnlocked, canExport } from './entitlements'
 import {
@@ -148,6 +160,33 @@ function savedTemplates(): Template[] {
 }
 
 /**
+ * Where the session record lives: the browser's own store, or nowhere.
+ *
+ * Deliberately not `saveStore()`: that one degrades to an in-memory `Storage`,
+ * which is the right answer for a template the user just saved — it is real for
+ * as long as this tab lives — and the wrong one for a record whose whole job is
+ * to outlive a reload. A record that cannot be read back after a refresh is a
+ * record that should not be written.
+ */
+const recordStore = browserStorage()
+
+/**
+ * Writes the session record: the photographs, which one is on the wall, the
+ * mount, the words, the numbers.
+ *
+ * Called at the end of every mutation that changes it — a photograph added,
+ * removed or selected, a mount picked, a slider moved, a word typed — because
+ * there is no cheaper moment to be wrong at: a refresh is a keystroke away, and
+ * a record that lags by one edit is a record that restores the wrong poster. It
+ * is a few hundred bytes of JSON into `localStorage`, so the price is a
+ * synchronous write that no user can perceive, and the alternative — a
+ * debounce — is a window in which the app forgets something the user just did.
+ */
+function persistSession(): void {
+  saveSession(recordStore, sessionOf(state))
+}
+
+/**
  * The rail's list: the built-ins first and in their authored order — they are
  * the product's own recommendation, and what a first-time visitor is choosing
  * between — then the user's saved templates, appended. A template you made is
@@ -202,6 +241,9 @@ const fieldRow = document.getElementById('field-row') as HTMLElement
 function onText(id: TextSlotId, value: string): void {
   state.text[id] = value
   draw()
+  // The words are the user's own work and the one thing on this screen that
+  // cannot be rebuilt from anything else on it.
+  persistSession()
 }
 
 function paintFields(): void {
@@ -234,6 +276,16 @@ function controlContext(t: Template): ControlContext {
 }
 
 /**
+ * The two blocks of a record that decide what the poster looks like — the ones
+ * the 画面 panel writes. Compared as JSON because they are plain data, and a
+ * field-by-field comparison would be a second list of the fields to keep in
+ * step with the first.
+ */
+function geometryOf(t: Template): string {
+  return JSON.stringify([t.frame, t.background])
+}
+
+/**
  * 已调整 — the wall is showing something the rail would not hand you.
  *
  * The comparison is against the record the rail *resolves* for this id: the
@@ -245,11 +297,10 @@ function controlContext(t: Template): ControlContext {
  */
 function paintAdjusted(t: Template): void {
   const source = getTemplate(t.id) ?? savedTemplates().find((s) => s.id === t.id)
-  const mine = JSON.stringify([t.frame, t.background])
   // Nothing to compare against means nothing was overridden: a record with no
   // source in the rail is a record this app did not derive from one.
-  const theirs = source ? JSON.stringify([source.frame, source.background]) : mine
-  controlBox.dataset.adjusted = mine === theirs ? 'false' : 'true'
+  controlBox.dataset.adjusted =
+    source && geometryOf(source) !== geometryOf(t) ? 'true' : 'false'
 }
 
 function paintControls(): void {
@@ -278,6 +329,7 @@ function onControl(id: ControlId, raw: number): void {
   syncControls(controlHost, controlSpecs(next, controlContext(next)))
   paintAdjusted(next)
   draw()
+  persistSession()
 }
 
 function pick(id: string): void {
@@ -295,6 +347,7 @@ function pick(id: string): void {
   // how a user gets back to the template as authored.
   paintControls()
   draw()
+  persistSession()
 }
 
 /**
@@ -347,6 +400,63 @@ function photoChanged(): void {
   paintRail(state.template?.id ?? null)
   paintControls()
   draw()
+  // Every path that changes the list goes through here, so this is the one
+  // place the record can be written for all of them.
+  persistSession()
+}
+
+/**
+ * The original bytes of a batch, so the next visit has the folder rather than
+ * the memory of one.
+ *
+ * Not awaited by its caller: the wall is already drawn from memory, and a write
+ * that takes a second must not hold up a render. The record is written again
+ * when the bytes land, and `sessionOf` reads the keys off the photographs — so
+ * "listed" becomes "comes back" at that moment and not before.
+ *
+ * `held` is read fresh for each photograph rather than once for the batch: the
+ * record's `photos` is one entry per photograph in the list, which is what makes
+ * a dropped key an index, and every store moves that array.
+ */
+async function keepPhotos(added: Photo[]): Promise<void> {
+  let evicted = 0
+  let refused = 0
+  for (const photo of added) {
+    const held = sessionOf(state).photos
+    let stored: { entry: StoredPhoto | null; dropped: string[] }
+    try {
+      stored = await putBytes(photo, held)
+    } catch {
+      // Storing is a convenience and the wall is already drawn from memory, so
+      // a throw in here is the same event as a refusal — and must not be an
+      // unhandled rejection in the middle of a render.
+      stored = { entry: null, dropped: [] }
+    }
+    for (const key of stored.dropped) {
+      const victim = state.photos[held.findIndex((h) => h.key === key)]
+      if (victim) forgetKey(victim)
+      evicted += 1
+    }
+    if (!stored.entry) refused += 1
+  }
+  persistSession()
+  if (evicted > 0) warnOnce('evicted')
+  if (refused > 0) warnOnce('refused')
+}
+
+/** The two things the storage story can do that the user would want to know
+ *  about, said once each per session: they are consequences of a limit rather
+ *  than of anything the user did wrong, and a wall of toasts per photograph is
+ *  not a message. */
+const warned = new Set<string>()
+function warnOnce(what: 'evicted' | 'refused'): void {
+  if (warned.has(what)) return
+  warned.add(what)
+  toast(
+    what === 'evicted'
+      ? `存储已满：只保留最近 ${MAX_PHOTOS} 张，更早的刷新后不会回来`
+      : '有照片无法保存，刷新后会丢失',
+  )
 }
 
 function onSelectPhoto(index: number): void {
@@ -368,11 +478,21 @@ function onSelectPhoto(index: number): void {
  * bare wall, and `draw` is what puts it back.
  */
 function onRemovePhoto(index: number): void {
+  // Read before the list moves: the record's `photos` is one entry per
+  // photograph in list order, so this is where the departing one's key is.
+  const before = sessionOf(state).photos
   const { list, removed } = removePhoto(photoList(), index)
   if (!removed) return
+  const key = before[index]?.key ?? ''
+
   useList(list)
   forgetThumb(removed)
   releasePhoto(removed)
+  // Two halves of the same removal: the key so the record stops pointing at it,
+  // the bytes so the disk stops holding them. The record is written by
+  // `photoChanged` a moment later, by which time the key is already gone.
+  forgetKey(removed)
+  if (key) void dropBytes(key)
   photoChanged()
   toast(`已移除 ${removed.name}`)
 }
@@ -396,6 +516,11 @@ wireInput(
       state.template = settleTemplate(state.template, controlContext(state.template))
     }
     photoChanged()
+    // ...and then the bytes, which is the half that survives a refresh. Not
+    // awaited: the wall is drawn, and the record is written again when the
+    // store lands (`keepPhotos`), so "listed" becomes "comes back" a moment
+    // after the user sees the photograph on the wall.
+    void keepPhotos(added)
     // `added[0]` and not the last one: `addPhotos` puts the wall on the *first*
     // of the batch, and a toast naming a photograph the user is not looking at
     // is worse than no toast.
@@ -524,6 +649,7 @@ function removeSaved(id: string): void {
     // the canvas is showing a template that no longer exists until this runs
     draw()
   }
+  persistSession()
   toast(`已删除模板：${victim.name}`)
 }
 
@@ -585,6 +711,63 @@ paintControls()
 draw()
 
 // ---------------------------------------------------------------------------
+// Where the last visit left off.
+//
+// The record is read before the first paint, so the app comes up already
+// wearing the mount and the words the user left it with rather than flashing
+// the boot template at them. The *photographs* come after, because their bytes
+// have to be read back out of IndexedDB and decoded, which is a job for the
+// event loop; until they land the wall is bare, which is a state this app is
+// already honest about being in.
+// ---------------------------------------------------------------------------
+const restored = loadSession(recordStore)
+
+if (restored) {
+  state.text = restored.text
+  if (restored.template) {
+    // A stored built-in comes back as the singleton it is, not as a copy of it.
+    // The copies are what 存为模板 makes, and this one was made by the session
+    // writer; everything downstream — the 已调整 marker, the rail's chips — reads
+    // the difference between "the template" and "a template somebody edited".
+    const stock = getTemplate(restored.template.id)
+    state.template =
+      stock && geometryOf(stock) === geometryOf(restored.template) ? stock : restored.template
+  }
+  // Paint what came back, in the order a pick paints it: the mount, the plaque,
+  // the words, the numbers, the wall.
+  paintRail(state.template?.id ?? null)
+  if (state.template) paintPlaque(state.template)
+  paintFields()
+  paintControls()
+  draw()
+}
+
+if (restored && restored.photos.some((p) => p.key !== '')) {
+  const entries = restored.photos
+  void (async () => {
+    try {
+      const { photos, at } = await restorePhotos(entries)
+      if (photos.length === 0) return
+      const current = photoList()
+      if (current.photos.length === 0) {
+        useList({ photos, active: restoredActive(at, restored.active) })
+      } else {
+        // The user added a photograph while the restore was still reading (a
+        // drop during a slow decode). Theirs is the one they just chose, so the
+        // restored list goes underneath it and the wall stays where they put
+        // it — the alternative is a wall that jumps out from under them.
+        useList({ photos: [...photos, ...current.photos], active: current.active + photos.length })
+      }
+      photoChanged()
+    } catch {
+      // A restore that throws is a session that does not come back. The app is
+      // already on screen and already usable, and there is nothing here the
+      // user would rather be told than the bare wall they can see.
+    }
+  })()
+}
+
+// ---------------------------------------------------------------------------
 // Demo affordance — user-facing, and not gated on ?dev=1.
 //
 // `?demo=1` puts a procedurally generated photograph on the wall so that
@@ -625,12 +808,18 @@ if (new URLSearchParams(location.search).get('demo') === '1') {
     // Through the same list and the same repaint as a photograph the user
     // loaded: the demo is the front door, and a front door that skipped the
     // list would leave the left column empty with a poster on the wall.
-    useList(
-      addPhotos(photoList(), [
-        { el: im, width: im.naturalWidth, height: im.naturalHeight, name: 'demo', exif: null },
-      ]),
-    )
+    const demo: Photo = {
+      el: im,
+      width: im.naturalWidth,
+      height: im.naturalHeight,
+      name: 'demo',
+      exif: null,
+    }
+    useList(addPhotos(photoList(), [demo]))
     photoChanged()
+    // ...and it persists like any other photograph, so a reload during a demo
+    // comes back to the demo rather than to the bare wall behind it.
+    void keepPhotos([demo])
   }
   im.src = d.toDataURL()
 
