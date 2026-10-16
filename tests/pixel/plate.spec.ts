@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { aspectOf, fitRect, matRect, resolveSize } from '../../src/core/geometry'
+import { outputRect } from '../../src/core/background'
 import { getTemplate } from '../../src/core/templates'
 
 /**
@@ -257,7 +258,17 @@ function bandFor(k: number) {
   const frame = fitRect({ W: SIZE.W * k, H: SIZE.H * k }, aspect, tpl.frame.scale, 0, 0)
   const mat = matRect(frame, tpl.frame.mat, tpl.frame.matBottom, k)
   const top = frame.y + frame.h + tpl.frame.mat * k
-  return { x: frame.x, y: top, w: frame.w, h: Math.max(1, mat.y + mat.h - top) }
+  // ...and then into the *delivered* frame. 样张 is a 无照片 template: the file is the
+  // mount's own box, and `render` gets there by translating the layout onto the card,
+  // so a band measured in canvas coordinates is off by that translation — which is
+  // exactly how this test first saw ink "above the band" that was in the band.
+  const win = outputRect(SIZE, tpl, aspect)
+  return {
+    x: frame.x - win.x * k,
+    y: top - win.y * k,
+    w: frame.w,
+    h: Math.max(1, mat.y + mat.h - top),
+  }
 }
 
 /**
@@ -306,7 +317,7 @@ function installProbe(): void {
     id: string
   }): Promise<Shot> => {
     const f = (window as any).__frame
-    const { render } = (window as any).__frameCore
+    const { render, outputRect, aspectOf } = (window as any).__frameCore
     const template = (window as any).__frameTemplates.getTemplate(opts.id)
 
     if (!flat) {
@@ -325,8 +336,11 @@ function installProbe(): void {
     }
     const photo = { el: flat, width: 64, height: 64, name: 'flat', exif: null }
 
-    const W = opts.size.W * opts.k
-    const H = opts.size.H * opts.k
+    // The delivered frame, not the canvas: 样张 is 无照片, so the file is the mount's
+    // own box and the canvas is that box — the app sizes `#cv` the same way.
+    const win = outputRect(opts.size, template, aspectOf(template.canvas.ratio, photo))
+    const W = Math.round(win.w * opts.k)
+    const H = Math.round(win.h * opts.k)
     f.setSize(W, H)
     const ctx = f.ctx()
     ctx.setTransform(1, 0, 0, 1, 0, 0)

@@ -4,6 +4,7 @@ import {
   matCeiling,
   matSumCeiling,
   offsetBounds,
+  radiusCeiling,
   scaleCeiling,
   settleFrame,
   type OffsetBounds,
@@ -37,7 +38,16 @@ import type { Size, Template } from '../core/types'
  * the record they were looking at, not a reference to what it came from.
  */
 
-export type ControlId = 'scale' | 'ox' | 'oy' | 'mat' | 'matBottom' | 'zoom' | 'blur' | 'darken'
+export type ControlId =
+  | 'scale'
+  | 'ox'
+  | 'oy'
+  | 'radius'
+  | 'mat'
+  | 'matBottom'
+  | 'zoom'
+  | 'blur'
+  | 'darken'
 
 export type ControlSpec = {
   id: ControlId
@@ -47,6 +57,9 @@ export type ControlSpec = {
   step: number
   value: number
   unit: string
+  /** What the readout says at zero, where zero is a *state* rather than a number.
+   *  圆角 has none — 「无」 — and every other control reads 0 in its unit. */
+  zero?: string
 }
 
 /**
@@ -90,6 +103,7 @@ const LABELS: Record<ControlId, { label: string; unit: string }> = {
   scale: { label: '前景大小', unit: '%' },
   ox: { label: '水平位置', unit: '%' },
   oy: { label: '垂直位置', unit: '%' },
+  radius: { label: '圆角', unit: 'px' },
   mat: { label: '白边', unit: 'px' },
   matBottom: { label: '下白边', unit: 'px' },
   zoom: { label: '后景放大', unit: '%' },
@@ -135,6 +149,17 @@ export function controlSpecs(t: Template, ctx: ControlContext): ControlSpec[] {
     { id: 'ox', ...LABELS.ox, step: 1, min: bounds.x.min, max: bounds.x.max, value: frame.ox ?? 0 },
     { id: 'oy', ...LABELS.oy, step: 1, min: bounds.y.min, max: bounds.y.max, value: frame.oy ?? 0 },
     {
+      id: 'radius',
+      ...LABELS.radius,
+      step: 1,
+      min: 0,
+      max: radiusCeiling(rect),
+      value: frame.radius,
+      // 有无与大小 in one control: zero *is* the off state, and it says so rather
+      // than reading 「0px」 beside a poster with square corners.
+      zero: '无',
+    },
+    {
       id: 'mat',
       ...LABELS.mat,
       step: 1,
@@ -177,13 +202,15 @@ export function controlSpecs(t: Template, ctx: ControlContext): ControlSpec[] {
   // which some engines clamp and others flip.
   //
   // 无照片 is filtered last, and deliberately: its delivery is the mount's own box
-  // (see `outputRect`), so the canvas follows the card, and the three numbers that
-  // only move or resize the *window* — 前景大小, 水平位置, 垂直位置 — cannot change
-  // that poster or that file. 白边/下白边 stay, because they change the card, and in
-  // this mode the card is the poster. Wanting a bigger file is the export's ladder
-  // (1×/2×/4×), not a slider.
+  // (see `outputRect`), so the canvas follows the card, and the numbers that only
+  // move or resize the *window* — 前景大小, 水平位置, 垂直位置 — cannot change that
+  // poster or that file. 圆角, 白边 and 下白边 stay, because every one of them
+  // changes the card, and in this mode the card is the poster. Wanting a bigger file
+  // is the export's ladder (1×/2×/4×), not a slider.
   const offered =
-    background.mode === 'mount' ? specs.filter((s) => s.id === 'mat' || s.id === 'matBottom') : specs
+    background.mode === 'mount'
+      ? specs.filter((s) => s.id === 'radius' || s.id === 'mat' || s.id === 'matBottom')
+      : specs
   return offered.map((s) => ({ ...s, min: Math.min(s.min, s.max), max: Math.max(s.min, s.max) }))
 }
 
@@ -227,6 +254,7 @@ export function setControl(
     case 'scale': frame.scale = v; break
     case 'ox': frame.ox = v; break
     case 'oy': frame.oy = v; break
+    case 'radius': frame.radius = v; break
     case 'mat': frame.mat = v; break
     case 'matBottom': frame.matBottom = v; break
     case 'zoom': background.zoom = v; break
@@ -264,20 +292,17 @@ export function settleTemplate(t: Template, ctx: ControlContext): Template {
 }
 
 /**
- * The three posters this app can deliver, which is what the 背景 row offers:
+ * The two posters this app can deliver, which is what the 背景 row offers:
  *
  * - 带背景 — the photograph again, out of focus, filling a canvas of the
  *   template's own shape.
- * - 透明 — nothing behind it, on that same canvas: a PNG with an empty background
- *   and the poster's full 1152×1440.
  * - 无照片 — no canvas at all: the delivery is the mount's own box, so a 1000×1000
  *   poster whose photograph and border measure 800×800 is written at 800×800.
  */
-export type BackgroundMode = 'blur' | 'none' | 'mount'
+export type BackgroundMode = 'blur' | 'mount'
 
 export const BACKGROUND_MODES: { id: BackgroundMode; label: string }[] = [
   { id: 'blur', label: '带背景' },
-  { id: 'none', label: '透明' },
   { id: 'mount', label: '无照片' },
 ]
 
@@ -308,8 +333,12 @@ export function setBackgroundMode(t: Template, mode: BackgroundMode, ctx: Contro
   // 无照片 delivers the mount's own box, so the offsets have nowhere to move the
   // card *to*: a window cannot be off-centre inside itself. Zeroed here rather than
   // merely ignored, so a record's own numbers never describe a poster that cannot
-  // exist — and so `mountRect`, which reads them, has nothing to crop around.
-  const frame = mode === 'mount' ? { ...t.frame, ox: 0, oy: 0 } : t.frame
+  // exist — and so `mountRect`, which reads them, has nothing to crop around. Only
+  // where there is something to zero, though: a record that never carried offsets
+  // keeps the frame it had, which is what stops a round trip out and back from
+  // lighting up 已调整 about a poster that is pixel-for-pixel the one it started as.
+  const moved = !!t.frame.ox || !!t.frame.oy
+  const frame = mode === 'mount' && moved ? { ...t.frame, ox: 0, oy: 0 } : t.frame
   if (mode === 'blur' && !(background.blur ?? 0)) background.blur = 40
   return settleTemplate({ ...t, frame, background }, ctx)
 }
@@ -343,30 +372,27 @@ export function renderBackgroundModes(
 
 /**
  * 白边's two surfaces: paper white (the default) and the photograph itself, blurred.
+ * The labels live with the circles that show them, in `src/ui/modebar.ts`.
  */
-export const MAT_FILLS: { id: 'white' | 'blur'; label: string }[] = [
-  { id: 'white', label: '白' },
-  { id: 'blur', label: '模糊' },
-]
 
 /** What the 白边 row needs to know about the poster it is adjusting. */
 export type MatFillPanel = {
   /** Drawn at all? The border has to *be* the poster's background for this to be a
-   *  choice worth offering — which is 透明 and 无照片, where the card is all there is.
-   *  On 带背景's blurred backdrop the same blur is a border nobody can see. */
+   *  choice worth offering, and that is 无照片: the card is all there is. On
+   *  带背景's blurred backdrop the same blur is a border nobody can see. */
   shown: boolean
   /** Live? A card with no border has nothing to fill. Drawn disabled rather than
-   *  hidden, because raising 白边 from 0 is a slider drag and this panel cannot be
+   *  hidden, because raising 白边 from 0 is a slider drag and this row cannot be
    *  rebuilt under one — see `syncMatFill`. */
   enabled: boolean
   blur: boolean
 }
 export function matFillPanel(t: Template): MatFillPanel {
   return {
-    // Drawn in the modes where the border *is* the poster's background, whatever the
+    // Drawn in the mode where the border *is* the poster's background, whatever the
     // border's width: raising 白边 from 0 is a drag, and a row that appeared partway
     // through one would be a row rebuilt under the pointer.
-    shown: t.background.mode === 'none' || t.background.mode === 'mount',
+    shown: t.background.mode === 'mount',
     enabled: t.frame.mat + t.frame.matBottom > 0,
     blur: !!t.frame.matBlur,
   }
@@ -382,58 +408,6 @@ export function matFillPanel(t: Template): MatFillPanel {
 export function setMatBlur(t: Template, on: boolean, ctx: ControlContext): Template {
   if (!!t.frame.matBlur === on) return t
   return settleTemplate({ ...t, frame: { ...t.frame, matBlur: on } }, ctx)
-}
-
-/** The 白边 row, heading included: a heading that could not be hidden with its row
- *  would be a word over nothing. */
-export function renderMatFill(
-  host: HTMLElement,
-  panel: MatFillPanel,
-  onPick: (on: boolean) => void,
-): void {
-  host.hidden = !panel.shown
-  host.textContent = ''
-  if (!panel.shown) return
-
-  const head = document.createElement('div')
-  head.className = 'rail-h'
-  const title = document.createElement('b')
-  title.textContent = '白边'
-  const note = document.createElement('span')
-  note.className = 'h-note'
-  note.textContent = '填充'
-  head.append(title, note)
-  host.appendChild(head)
-
-  const row = document.createElement('div')
-  row.className = 'seg'
-  row.setAttribute('role', 'group')
-  row.setAttribute('aria-label', '白边填充')
-  for (const f of MAT_FILLS) {
-    const on = f.id === 'blur'
-    const b = document.createElement('button')
-    b.type = 'button'
-    b.className = 'seg-btn' + (on === panel.blur ? ' on' : '')
-    b.dataset.fill = f.id
-    b.textContent = f.label
-    b.disabled = !panel.enabled
-    b.setAttribute('aria-pressed', on === panel.blur ? 'true' : 'false')
-    b.addEventListener('click', () => onPick(on))
-    row.appendChild(b)
-  }
-  host.appendChild(row)
-}
-
-/**
- * The one thing about that row that can change without a rebuild: whether there is
- * a border to fill.
- *
- * Called from the *slider* write path, because 白边 0 → 16 is a drag, and a rebuild
- * under a drag loses the pointer — the same reason `syncControls` exists for the
- * sliders and `renderControls` does not run per tick.
- */
-export function syncMatFill(host: HTMLElement, enabled: boolean): void {
-  for (const b of host.querySelectorAll<HTMLButtonElement>('.seg-btn')) b.disabled = !enabled
 }
 
 /** The readout: one decimal at most, because a settled scale is a division's
@@ -504,6 +478,6 @@ export function syncControls(host: HTMLElement, specs: ControlSpec[]): void {
     input.max = String(s.max)
     input.step = String(s.step)
     if (Number(input.value) !== s.value) input.value = String(s.value)
-    if (val) val.textContent = `${shown(s.value)}${s.unit}`
+    if (val) val.textContent = s.value === 0 && s.zero ? s.zero : `${shown(s.value)}${s.unit}`
   }
 }

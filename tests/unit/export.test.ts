@@ -26,10 +26,8 @@ describe('deliverySize', () => {
   it('is the whole canvas for every mode that has one', () => {
     const t = getTemplate('classic')!
     const size = resolveSize(t.canvas.ratio, 1440)
-    for (const mode of ['blur', 'none'] as const) {
-      const template = { ...t, background: { ...t.background, mode } }
-      expect(deliverySize(size, template, photo), mode).toEqual(size)
-    }
+    const template = { ...t, background: { ...t.background, mode: 'blur' as const } }
+    expect(deliverySize(size, template, photo)).toEqual(size)
   })
 
   it('is the mount’s own box in 无照片, rounded to whole pixels', () => {

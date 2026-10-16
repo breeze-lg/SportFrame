@@ -108,11 +108,29 @@ body.ceremony-open .topbar { opacity: 0; pointer-events: none; visibility: hidde
   min-height: 0;
   width: 100%;
   display: flex;
+  /* A column, because the poster is not alone in this pane: `#modebar` — 背景's two
+     previews and, in 无照片, 白边's discs — belongs *under* the picture, and a row
+     would put it beside one. The two are one group, centred together, so the bar
+     keeps the poster's own margin instead of floating off toward the caption. */
+  flex-direction: column;
+  gap: 12px;
   align-items: center;
   justify-content: center;
   position: relative;
 }
-canvas#cv { max-width: 92%; max-height: 92%; box-shadow: var(--deep); border-radius: 2px; }
+canvas#cv {
+  max-width: 92%;
+  /* The poster is measured against what is left once the bar has its room: 170px is
+     that bar at its tallest — two 68px previews with their labels, the gap between
+     the pane's two rows, and 白边's discs out (which only 无照片 does). `flex: none`
+     because a canvas that flex shrinks is a *squashed* poster, not a smaller one —
+     and reserving the *open* height rather than the closed one is what keeps the
+     discs from being clipped on a phone, where the pane has no room to give. */
+  max-height: calc(100% - 170px);
+  flex: none;
+  box-shadow: var(--deep);
+  border-radius: 2px;
+}
 /* Until something is drawn on it, `#cv` is a transparent 300×150 box, and
    `--deep` still paints its shadow around it — in light theme a wide dark
    smudge floating mid-wall, in the state this shell exists to define. The
@@ -469,6 +487,117 @@ canvas#cv:not([width]) { visibility: hidden; }
   max-width: 90%;
 }
 .toast.show { opacity: 1; }
+
+/* 背景, under the poster — `src/ui/modebar.ts`. Two previews of the *same*
+   photograph, made the two ways this app can make a poster, and then — in 无照片
+   only — the two discs the border can be made of.
+
+   Under the poster rather than in the adjustments panel, and the reason is the
+   thing the control is about: 带背景 and 无照片 differ in *size* before they differ
+   in anything else (one is the whole canvas, the other is the mount's own box), so
+   the previews are drawn at the size they will be delivered at and the smaller one
+   simply *is* smaller. A word cannot do that, and `#control-modes` could not. */
+.modebar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+.mode-row { display: flex; align-items: flex-end; gap: 16px; }
+.mode-thumb {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--quiet);
+  font-family: var(--sans);
+  font-size: 11px;
+  cursor: pointer;
+}
+/* The box is fixed; the bitmap inside it is not. Both thumbs are rendered at the
+   chip's own resolution and both are capped at the same box, so 无照片's smaller
+   delivery reads as a smaller picture — which is the honest answer to "what am I
+   about to write?". */
+.mode-thumb img {
+  display: block;
+  max-width: 54px;
+  max-height: 68px;
+  border-radius: 2px;
+  box-shadow: 0 1px 2px rgba(28, 27, 24, .12), 0 10px 22px -10px rgba(28, 27, 24, .35);
+  opacity: .62;
+  transition: opacity .2s ease;
+}
+.mode-thumb:hover img { opacity: .85; }
+.mode-thumb.on { color: var(--ink); }
+.mode-thumb.on img { opacity: 1; box-shadow: 0 0 0 1px var(--ink), 0 10px 22px -10px rgba(28, 27, 24, .4); }
+.mode-thumb:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+
+/* The discs — 白边's two surfaces — are *revealed*, not toggled: the row animates
+   open when 无照片 is chosen and closed when it is left. It is the one animated
+   thing in this app, and it earns the exception by answering the question the
+   mode just raised: with no background behind the mount, what is the border?
+
+   `max-height` rather than `display`, because a transition needs two states of the
+   same box; `overflow: hidden` so the closed row is genuinely out of the way;
+   `visibility` at the end of the transition so a hidden disc is not in the tab
+   order. Nothing here is rebuilt on the way in — see `syncModeBar` — because an
+   element created with the transition's end state has nothing to animate from. */
+.disc-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  visibility: hidden;
+  transition: max-height .3s ease, opacity .22s ease, visibility 0s linear .3s;
+}
+.disc-row[data-out='true'] {
+  max-height: 84px;
+  opacity: 1;
+  visibility: visible;
+  transition: max-height .3s ease, opacity .26s ease .06s, visibility 0s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .disc-row, .disc-row[data-out='true'] { transition: none; }
+}
+
+.disc {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--quiet);
+  font-family: var(--sans);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+/* The circle itself. White paper with a hairline for 白边, the photograph blurred
+   for 模糊 — the two materials the border can be, shown as the only thing that can
+   show them. `--mat` rather than `#FFF`: the mount's own white, in both themes. */
+.disc-art {
+  display: block;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background-color: var(--mat);
+  background-position: center;
+  background-size: cover;
+  box-shadow: inset 0 0 0 1px var(--bevel-mat), 0 1px 3px rgba(28, 27, 24, .18);
+}
+.disc.on { color: var(--ink); }
+.disc.on .disc-art { box-shadow: inset 0 0 0 1px var(--bevel-mat), 0 0 0 2px var(--ink); }
+.disc:disabled { opacity: .38; cursor: default; }
+.disc:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 
 /* ---------------------------------------------------------------------------
    The chrome the reference editor gave this app: a bar across the top on a

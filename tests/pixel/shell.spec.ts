@@ -106,10 +106,10 @@ test('the two panels between them are the adjustment surface, and nothing else i
 }) => {
   await page.goto('/')
 
-  // 画面 first: 经典 is the boot mount and a blur one, so all eight rows are on —
-  // five for the mount and three for 后景.
+  // 画面 first: 经典 is the boot mount and a blur one, so all nine rows are on —
+  // six for the mount and three for 后景.
   const mount = page.locator('#control-row input[type="range"]')
-  await expect(mount).toHaveCount(8)
+  await expect(mount).toHaveCount(9)
 
   const labels = await mount.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
   for (const label of labels) {

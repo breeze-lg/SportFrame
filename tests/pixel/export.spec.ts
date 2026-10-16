@@ -147,7 +147,7 @@ test('[RF-5] the advertised 4x export is drawn, not downgraded, where the device
  * so the card is 769 wide and 1058 tall. (The ratio is the template's own, not the
  * photograph's: a `4:5` canvas lays every photograph out at 4:5.)
  */
-test('无照片 exports at the mount’s own size, and the other two at the canvas’s', async ({ page }) => {
+test('无照片 exports at the mount’s own size, and 带背景 at the canvas’s', async ({ page }) => {
   const shots = await page.evaluate(async () => {
     const { exportPng } = (window as any).__frameExport
     const base = {
@@ -158,7 +158,7 @@ test('无照片 exports at the mount’s own size, and the other two at the canv
       frame: { scale: 64, radius: 0, mat: 16, matBottom: 104, shadow: 0 },
     }
     const out: { mode: string; w: number; h: number; corner: number[]; inside: number[] }[] = []
-    for (const mode of ['blur', 'none', 'mount']) {
+    for (const mode of ['blur', 'mount']) {
       const r = await exportPng({
         size: { W: 1152, H: 1440 },
         template: { ...base, background: { mode, blur: 20, zoom: 118, darken: 0 } },
@@ -185,11 +185,10 @@ test('无照片 exports at the mount’s own size, and the other two at the canv
   })
   const by = Object.fromEntries(shots.map((s) => [s.mode, s]))
 
-  // The canvas, twice: 带背景 paints it, 透明 leaves it empty.
+  // The canvas for 带背景, and the mount's own box for 无照片: same two functions the
+  // screen canvas, the export ladder and the size beside the rack all ask.
   expect([by.blur!.w, by.blur!.h]).toEqual([1152, 1440])
-  expect([by.none!.w, by.none!.h]).toEqual([1152, 1440])
   expect(by.blur!.corner[3]).toBe(255)
-  expect(by.none!.corner[3]).toBe(0)
 
   // ...and no canvas at all: the mount's own box, which is the photograph plus a
   // 16px border on three sides and 104px below.
@@ -197,8 +196,8 @@ test('无照片 exports at the mount’s own size, and the other two at the canv
   // The card fills the file, and tightly: 8px in from the file's own edge is the
   // card's white border rather than a background.
   expect(Array.from(by.mount!.inside)).toEqual([255, 255, 255, 255])
-  expect(by.mount!.w).toBeLessThan(by.none!.w)
-  expect(by.mount!.h).toBeLessThan(by.none!.h)
+  expect(by.mount!.w).toBeLessThan(by.blur!.w)
+  expect(by.mount!.h).toBeLessThan(by.blur!.h)
 })
 
 test('[RF-5] a device that refuses the 4x canvas falls to the best rung it can hold', async ({

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { aspectOf, resolveSize } from '../../src/core/geometry'
-import { frameFits } from '../../src/core/limits'
+import { frameFits, frameRect, radiusCeiling } from '../../src/core/limits'
 import { TEMPLATES, getTemplate, validateTemplate } from '../../src/core/templates'
 import { BACKGROUND_MODES, controlSpecs, matFillPanel, setBackgroundMode, setControl, setMatBlur, settleTemplate, type ControlContext, type ControlId } from '../../src/ui/controls'
 import type { Template } from '../../src/core/types'
@@ -32,23 +32,37 @@ const ALL: ControlId[] = ['scale', 'ox', 'oy', 'mat', 'matBottom', 'zoom', 'blur
 /** The five the frame always has, restated rather than read off the module: a
  *  test that asked `controlSpecs` what its own first five are would pass for any
  *  five at all. */
-const FRAME: ControlId[] = ['scale', 'ox', 'oy', 'mat', 'matBottom']
+const FRAME: ControlId[] = ['scale', 'ox', 'oy', 'radius', 'mat', 'matBottom']
 
 /** Values to push into every control: far below, on, and far above the range,
  *  plus the two the DOM cannot produce and the record must not accept. */
 const SWEEP = [0, 1, 17, 40, 66, 90, 120, 200, 1e6, -40, NaN, Infinity]
 
 describe('controlSpecs', () => {
-  it('offers the five frame controls on every template, and 后景 only where there is a 后景', () => {
+  it('offers the six frame controls on every template, and 后景 only where there is a 后景', () => {
     for (const t of TEMPLATES) {
       const ids = controlSpecs(t, ctxFor(t)).map((s) => s.id)
       // 后景放大/虚化/压暗 describe the photograph *as its own backdrop*, so only
-      // 虚化 has them: 无照片 paints a flat fill, and 样张 ships as one — a slider
-      // that accepts a drag and changes nothing is the one thing a control in this
-      // app is not allowed to do.
+      // 带背景 has them: 无照片 has no backdrop at all — 样张 ships as one, too — and
+      // a slider that accepts a drag and changes nothing is the one thing a control
+      // in this app is not allowed to do.
       const backdrop: ControlId[] = t.background.mode === 'blur' ? ['zoom', 'blur', 'darken'] : []
-      expect(ids, t.id).toEqual([...FRAME, ...backdrop])
+      const card: ControlId[] = ['radius', 'mat', 'matBottom']
+      expect(ids, t.id).toEqual(t.background.mode === 'blur' ? [...FRAME, ...backdrop] : card)
     }
+  })
+
+  it('圆角 is 有无与大小 in one row: zero is the off state and it says so', () => {
+    const t = getTemplate('classic')!
+    const radius = controlSpecs(t, ctxFor(t)).find((s) => s.id === 'radius')!
+    expect(radius.min).toBe(0)
+    expect(radius.zero).toBe('无')
+    // The ceiling is the layout's own — `roundedRect` refuses a radius past half the
+    // shorter side, and a slider that offered more would have a dead top half.
+    expect(radius.max).toBe(radiusCeiling(frameRect(ctxFor(t).size, ctxFor(t).aspect, t.frame.scale)))
+    expect(radius.max).toBeLessThan(ctxFor(t).size.H)
+    // ...and the other numbers read their unit, not a word.
+    for (const s of controlSpecs(t, ctxFor(t))) if (s.id !== 'radius') expect(s.zero, s.id).toBeUndefined()
   })
 
   it('labels and units every control, with no duplicates', () => {
@@ -77,19 +91,22 @@ describe('controlSpecs', () => {
 
   it('the ceilings are the layout own, not round numbers', () => {
     // The claim that ties the panel to `limits.ts`: 经典 declares no mat, so its
-    // photograph may reach the full canvas; 样张 declares the deepest mat in the
-    // set, so its photograph may not.
+    // photograph may reach the full canvas; 拍立得 declares the deepest mat of the
+    // 带背景 set, so its photograph may not.
     const classic = getTemplate('classic')!
-    const specSheet = getTemplate('spec-sheet')!
+    const polaroid = getTemplate('polaroid')!
     const classicScale = controlSpecs(classic, ctxFor(classic)).find((s) => s.id === 'scale')!
-    const specScale = controlSpecs(specSheet, ctxFor(specSheet)).find((s) => s.id === 'scale')!
+    const polaroidScale = controlSpecs(polaroid, ctxFor(polaroid)).find((s) => s.id === 'scale')!
     expect(classicScale.max).toBe(100)
-    // 1440·(1 − 2·236/1440) = 67.2 — the number `TEMPLATES` writes out in prose.
-    expect(specScale.max).toBe(67)
+    // 100·(1 − 2·(16+104)/1440) = 83.3 — floored, because a record settled onto
+    // 83.33 would sit above a slider whose maximum is 83.
+    expect(polaroidScale.max).toBe(83)
 
-    // And a matted frame cannot travel as far off centre as a bare one.
-    const bareOx = controlSpecs(classic, ctxFor(classic)).find((s) => s.id === 'ox')!
-    const mattedOx = controlSpecs(specSheet, ctxFor(specSheet)).find((s) => s.id === 'ox')!
+    // And a mat only ever takes room away: the same card, on the same canvas, can
+    // travel further off centre without one.
+    const bare = { ...polaroid, frame: { ...polaroid.frame, mat: 0, matBottom: 0 } }
+    const bareOx = controlSpecs(bare, ctxFor(polaroid)).find((s) => s.id === 'ox')!
+    const mattedOx = controlSpecs(polaroid, ctxFor(polaroid)).find((s) => s.id === 'ox')!
     expect(Math.abs(mattedOx.max)).toBeLessThan(Math.abs(bareOx.max))
   })
 })
@@ -179,23 +196,25 @@ describe('setBackgroundMode', () => {
     // photograph on it, a canvas with nothing on it, and no canvas at all. Every
     // mode the panel can set has to be a record the validator accepts, or the write
     // would throw away the user's next saved template.
-    expect(panel).toEqual(['blur', 'none', 'mount'])
+    expect(panel).toEqual(['blur', 'mount'])
     for (const id of panel) {
       const t = { ...getTemplate('classic')!, background: { mode: id } as Template['background'] }
       expect(validateTemplate(t).ok, id).toBe(true)
     }
   })
 
-  it('offers 无照片 only the two numbers that change the card', () => {
+  it('offers 无照片 only the numbers that change the card', () => {
     const t = getTemplate('polaroid')!
     const mounted = setBackgroundMode(t, 'mount', ctxFor(t))
     // The delivery is the mount's own box, so the canvas follows the card: 前景大小
     // resizes the window, 水平位置/垂直位置 move it, and none of the three can
-    // change the poster. 白边/下白边 do — in this mode the card *is* the poster.
-    expect(controlSpecs(mounted, ctxFor(t)).map((s) => s.id)).toEqual(['mat', 'matBottom'])
+    // change the poster. 圆角, 白边 and 下白边 do — in this mode the card *is* the
+    // poster, so every number that changes the card changes the file.
+    expect(controlSpecs(mounted, ctxFor(t)).map((s) => s.id)).toEqual(['radius', 'mat', 'matBottom'])
     // ...and the numbers it does not offer are not writable either.
     expect(setControl(mounted, 'scale', 40, ctxFor(t))).toBe(mounted)
     expect(setControl(mounted, 'ox', 5, ctxFor(t))).toBe(mounted)
+    expect(setControl(mounted, 'radius', 20, ctxFor(t)).frame.radius).toBe(20)
   })
 
   it('zeroes the offsets on the way into 无照片: a window cannot be off-centre inside itself', () => {
@@ -212,17 +231,18 @@ describe('setBackgroundMode', () => {
 
   it('writes the mode onto a copy, and leaves the singleton alone', () => {
     const t = getTemplate('classic')!
-    const next = setBackgroundMode(t, 'none', ctxFor(t))
-    expect(next.background.mode).toBe('none')
+    const next = setBackgroundMode(t, 'blur', ctxFor(t))
+    const mounted = setBackgroundMode(next, 'mount', ctxFor(next))
+    expect(mounted.background.mode).toBe('mount')
     expect(t.background.mode).toBe('blur')
-    expect(frameFits(ctxFor(t).size, next.frame)).toBe(true)
+    expect(frameFits(ctxFor(t).size, mounted.frame)).toBe(true)
   })
 
   it('hands back the record it was given when the mode is already on', () => {
     const t = getTemplate('classic')!
     expect(setBackgroundMode(t, 'blur', ctxFor(t))).toBe(t)
     const flat = getTemplate('spec-sheet')!
-    expect(setBackgroundMode(flat, 'none', ctxFor(flat))).toBe(flat)
+    expect(setBackgroundMode(flat, 'mount', ctxFor(flat))).toBe(flat)
   })
 
   it('keeps 后景放大 and 压暗 through a step out and back', () => {
@@ -253,7 +273,7 @@ describe('setBackgroundMode', () => {
 
   it('gives 虚化 a blur to be blurred by on the way in, and keeps 样张 its sheet', () => {
     const flat = getTemplate('spec-sheet')!
-    expect(flat.background.mode).toBe('none')
+    expect(flat.background.mode).toBe('mount')
     // 样张's white sheet is authored (`background.color`), because its plate is
     // printed on it — and it survives the trip out and back, so the card is not
     // quietly left on an empty canvas.
@@ -264,13 +284,13 @@ describe('setBackgroundMode', () => {
     expect(blurred.background.blur).toBeGreaterThan(0)
     // ...and the panel can then show the slider that number belongs to.
     expect(controlSpecs(blurred, ctxFor(flat)).map((s) => s.id)).toEqual([...FRAME, 'zoom', 'blur', 'darken'])
-    expect(setBackgroundMode(blurred, 'none', ctxFor(flat)).background.color).toBe('#FFFFFF')
+    expect(setBackgroundMode(blurred, 'mount', ctxFor(flat)).background.color).toBe('#FFFFFF')
   })
 
   it('and keeps the blur a record already had', () => {
     const t = getTemplate('classic')!
     const blur = t.background.blur
-    const there = setBackgroundMode(setBackgroundMode(t, 'none', ctxFor(t)), 'blur', ctxFor(t))
+    const there = setBackgroundMode(setBackgroundMode(t, 'mount', ctxFor(t)), 'blur', ctxFor(t))
     expect(there.background.blur).toBe(blur)
   })
 
@@ -284,18 +304,16 @@ describe('setBackgroundMode', () => {
   })
 })
 
-describe('白边 in 透明 and 无照片', () => {
+describe('白边 in 无照片', () => {
   it('is offered only where the border is the poster’s background', () => {
     const t = getTemplate('polaroid')!
     // 带背景 draws the border on a blurred backdrop, where the same blur is a
-    // border nobody can see — the failure this panel refuses everywhere else.
+    // border nobody can see — the failure this row refuses everywhere else.
     expect(matFillPanel(t).shown).toBe(false)
-    for (const mode of ['none', 'mount'] as const) {
-      const p = matFillPanel(setBackgroundMode(t, mode, ctxFor(t)))
-      expect(p.shown, mode).toBe(true)
-      expect(p.enabled, mode).toBe(true)
-      expect(p.blur, mode).toBe(false)
-    }
+    const p = matFillPanel(setBackgroundMode(t, 'mount', ctxFor(t)))
+    expect(p.shown).toBe(true)
+    expect(p.enabled).toBe(true)
+    expect(p.blur).toBe(false)
   })
 
   it('is shown but disabled where there is no border to fill', () => {

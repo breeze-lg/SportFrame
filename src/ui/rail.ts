@@ -1,6 +1,7 @@
 import { resolveSize } from '../core/geometry'
 import { render } from '../core/render'
 import type { Photo, Template } from '../core/types'
+import { deliverySize } from './export'
 
 /** The chip's long edge in CSS pixels — the design sheet's 62px box — and the
  *  resolution its preview is rendered at. */
@@ -38,8 +39,13 @@ export function styleThumb(t: Template, photo: Photo | null, longEdge: number): 
   // (against the photograph, for a saved `orig` template) and the long edge.
   const size = resolveSize(t.canvas.ratio, longEdge, photo ?? undefined)
   const k = (CHIP_LONG * CHIP_DPR) / longEdge
-  const w = Math.max(1, Math.round(size.W * k))
-  const h = Math.max(1, Math.round(size.H * k))
+  // ...and the *delivery*, because 无照片 crops to the mount: a preview of that
+  // poster is the card, not the canvas the card was laid out on. It is also why the
+  // bitmap here can be smaller than the box — the two mode thumbs are drawn into the
+  // same box, and the difference between them is the difference the app makes.
+  const delivery = deliverySize(size, t, photo)
+  const w = Math.max(1, Math.round(delivery.W * k))
+  const h = Math.max(1, Math.round(delivery.H * k))
   return {
     // A poster is a photograph framed; with no photograph there is nothing to
     // preview. The box is still this template's own shape, which is the one

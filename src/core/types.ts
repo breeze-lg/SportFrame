@@ -4,28 +4,25 @@ export type Rect = { x: number; y: number; w: number; h: number }
 export type Ratio = '4:5' | '1:1' | '3:2' | '16:9' | '9:16' | 'orig'
 
 export type Background = {
-  /** What the poster *is*, which is one of three things:
+  /** What the poster *is*, which is one of two things:
    *
    *  `blur`  the photograph again, cover-cropped and out of focus, filling a
-   *          canvas of the template's own shape. The app's own look, and what
-   *          eight of the nine templates ship with.
-   *  `none`  nothing behind the photograph, on that same canvas — a poster of the
-   *          full 1152×1440 with an empty background, which is what a PNG with
-   *          alpha is for.
+   *          canvas of the template's own shape — what eight of the nine
+   *          templates ship with.
    *  `mount` no canvas to speak of: the delivery is the mount's own box. A 1000×1000
    *          poster whose photograph and border measure 800×800 is exported at
    *          800×800 — the paper around the mount is not part of the poster, so it
    *          is not part of the file.
    */
-  mode: 'blur' | 'none' | 'mount'
+  mode: 'blur' | 'mount'
   zoom?: number
   blur?: number
   darken?: number
-  /** The sheet the poster is printed on, if the template has one. Authored, never
-   *  a control: 样张 ships `#FFFFFF` and is the one template that has a sheet at
-   *  all, because its plate is printed on it — a camera plate set on an empty
-   *  canvas is a caption floating over nothing. Fills the canvas in `none`, and the
-   *  mount's box in `mount`, where it is the card itself. */
+  /** The sheet a `mount` poster is printed on, if the template has one. Authored,
+   *  never a control: 样张 ships `#FFFFFF` and is the one template that has a sheet
+   *  at all, because its plate is printed on it — a camera plate over nothing is a
+   *  caption floating in the void. Fills the canvas, so it shows only where the
+   *  mount does not reach it: the corners of a rounded card. */
   color?: string
 }
 

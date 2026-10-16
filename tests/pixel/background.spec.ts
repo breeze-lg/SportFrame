@@ -23,7 +23,7 @@ test('无照片 with a sheet is that sheet; without one the wall is the app slat
     f.setSize(200, 200)
     const ctx = f.ctx()
     ctx.clearRect(0, 0, 200, 200)
-    drawBackground(ctx, { W: 200, H: 200 }, { mode: 'none', color: '#FFFFFF' }, photo, 1)
+    drawBackground(ctx, { W: 200, H: 200 }, { mode: 'mount', color: '#FFFFFF' }, photo, 1)
     return f.pixel(100, 100).slice(0, 3)
   })
   expect(filled).toEqual([255, 255, 255])

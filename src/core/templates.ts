@@ -49,10 +49,10 @@ export function validateTemplate(t: unknown): Validation {
   }
 
   const bg = o.background as Record<string, unknown> | undefined
-  if (!bg || !['blur', 'none', 'mount'].includes(bg.mode as string)) {
+  if (!bg || !['blur', 'mount'].includes(bg.mode as string)) {
     return { ok: false, error: 'invalid background mode' }
   }
-  // optional: a `none` template legitimately omits all three
+  // optional: a `mount` template legitimately omits all three
   for (const key of ['blur', 'darken', 'zoom']) {
     const v = bg[key]
     if (v === undefined) continue
@@ -270,7 +270,7 @@ export const TEMPLATES: Template[] = [
     premium: true,
     layout: { kind: 'single' },
     canvas: { ratio: '4:5' },
-    background: { mode: 'none', color: '#FFFFFF' },
+    background: { mode: 'mount', color: '#FFFFFF' },
     // `scale` is not free: `matRect` grows the frame by `mat` on three sides and
     // by `mat + matBottom` below, so the card fits its canvas only while
     // `mat + matBottom ≤ H·(1 - scale/100)/2`. This template carries the deepest

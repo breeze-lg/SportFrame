@@ -56,11 +56,11 @@ export function drawBlurredPhoto(
 /**
  * The rectangle a poster is *delivered* as.
  *
- * For every mode but one this is the whole canvas: the poster is the paper, and
- * the file is the paper. 无照片 (`mount`) is the exception, and it is the whole
- * point of the mode — a 1000×1000 poster whose photograph and border measure
- * 800×800 is delivered at 800×800, because the paper around the mount is not part
- * of the picture, so it is not part of the file.
+ * For 带背景 this is the whole canvas: the poster is the paper, and the file is the
+ * paper. 无照片 (`mount`) is the exception, and it is the whole point of the mode — a
+ * 1000×1000 poster whose photograph and border measure 800×800 is delivered at
+ * 800×800, because the paper around the mount is not part of the picture, so it is
+ * not part of the file.
  *
  * One function, deliberately. The screen canvas, the export, the area budget in
  * `export.ts` and the size printed under the poster all ask this, and they have to
@@ -76,7 +76,6 @@ export function outputRect(size: Size, template: Template, aspect: number): Rect
   }
   return mountRect(size, aspect, template.frame)
 }
-
 /**
  * Where the window sits inside the canvas, as a translation. Zero for every mode
  * but 无照片, where the canvas has been moved onto the mount: the layout is still
@@ -106,20 +105,15 @@ export function drawBackground(
     return
   }
 
-  // 无照片 — nothing behind the photograph. A record with a `color` gets that
-  // sheet (样张, whose plate is printed on it); every other record gets an empty
-  // canvas, which is what the export is: the photograph and its mount on
-  // transparency, ready to drop onto a page.
+  // 无照片 — nothing behind the photograph: the card, on transparency wherever the
+  // card does not reach. A record with a `color` gets that sheet instead (样张,
+  // whose plate is printed on it), which shows only in a rounded card's corners.
   //
-  // `mount` shares this and does one more thing, elsewhere: the canvas *is* the
-  // mount's box (see `outputRect`), so the same fill or clear covers the window the
-  // poster is delivered through.
-  //
-  // The clear is load-bearing. Every other mode paints the whole canvas, so
-  // `render` never has to clear it — without this, a re-draw would leave the
-  // *previous* backdrop underneath a record that says there is none, and the
-  // export would carry a background the poster does not have.
-  if (bg.mode === 'none' || bg.mode === 'mount') {
+  // The clear is load-bearing. 带背景 paints the whole canvas, so `render` never has
+  // to clear it — without this, a re-draw would leave the *previous* backdrop
+  // underneath a record that has no background at all, and the export would carry
+  // one the poster does not have.
+  if (bg.mode === 'mount') {
     if (bg.color) {
       ctx.fillStyle = bg.color
       ctx.fillRect(0, 0, W * k, H * k)

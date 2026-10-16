@@ -2,7 +2,7 @@ import { render } from './core/render'
 import { resolveSize, matRect, aspectOf, fitRect } from './core/geometry'
 import { TEMPLATES, getTemplate } from './core/templates'
 import { drawMat, roundedRect } from './core/mat'
-import { drawBackground } from './core/background'
+import { drawBackground, outputRect } from './core/background'
 import { drawText, measureToFit, frameFont, blockTop, textSpan, baseSize } from './core/text'
 import { drawPlate, plateFields, plateLines, PLATE_WEIGHTS } from './core/plate'
 import { initTheme } from './ui/theme'
@@ -43,19 +43,17 @@ import {
 import {
   controlSpecs,
   matFillPanel,
-  renderBackgroundModes,
   renderControls,
-  renderMatFill,
   setBackgroundMode,
   setControl,
   setMatBlur,
   settleTemplate,
   syncControls,
-  syncMatFill,
   type BackgroundMode,
   type ControlContext,
   type ControlId,
 } from './ui/controls'
+import { modeBar, renderModeBar, syncMatDiscs, syncModeBar } from './ui/modebar'
 import { plaqueText } from './ui/plaque'
 import { loadCustom, saveCustom, browserStorage, sessionStore } from './ui/custom'
 import type { Photo, Size, Template, TextAnchor, TextConfig, TextSlotId } from './core/types'
@@ -614,8 +612,23 @@ function paintFields(): void {
  */
 const controlBox = document.getElementById('controls') as HTMLElement
 const controlHost = document.getElementById('control-row') as HTMLElement
-const modeHost = document.getElementById('control-modes') as HTMLElement
-const matHost = document.getElementById('control-mat') as HTMLElement
+const modeBarHost = document.getElementById('modebar') as HTMLElement
+
+/**
+ * The bar under the poster: 带背景 / 无照片 as previews of this photograph, and — in
+ * 无照片 — the two discs the border can be made of.
+ *
+ * Repainted from the two things it is a picture *of*: the record and the photograph.
+ * `renderModeBar` builds it once and `syncModeBar` updates it, and that split is the
+ * whole reason the discs can animate at all — a rebuilt element has nothing to
+ * transition from.
+ */
+function paintModeBar(): void {
+  renderModeBar(modeBarHost, modeBar(state.template!, activePhoto(state), state.longEdge), {
+    mode: onBackgroundMode,
+    fill: onMatBlur,
+  })
+}
 
 /**
  * What the panel measures its ceilings against: the canvas the wall is drawn
@@ -669,11 +682,9 @@ function paintControls(): void {
   const t = state.template
   controlBox.hidden = !t
   if (!t) return
-  // The choice first, then the rows it decides the existence of: 背景 无照片 takes
-  // the three 后景 sliders away, so the panel is driven from the mode rather than
-  // merely synced.
-  renderBackgroundModes(modeHost, t.background.mode, onBackgroundMode)
-  renderMatFill(matHost, matFillPanel(t), onMatBlur)
+  // Both the numbers and the bar under the poster are functions of this record, and
+  // the bar is also a picture of the photograph — see `paintModeBar`.
+  paintModeBar()
   renderControls(controlHost, controlSpecs(t, controlContext(t)), onControl)
   paintAdjusted(t)
 }
@@ -740,10 +751,10 @@ function onControl(id: ControlId, raw: number): void {
   rememberStep(`frame:${id}`)
   state.template = next
   syncControls(controlHost, controlSpecs(next, controlContext(next)))
-  // ...and the one thing in the panel that is not a slider and still depends on
-  // them: whether there is a border for 白边 to fill. Synced, never rebuilt — this
-  // runs on every tick of a drag.
-  syncMatFill(matHost, matFillPanel(next).enabled)
+  // ...and the one thing outside the panel that a slider can turn live: whether the
+  // mount has a border for 白边's discs to fill. Synced, never rebuilt — this runs on
+  // every tick of a drag.
+  syncMatDiscs(modeBarHost, matFillPanel(next).enabled)
   paintAdjusted(next)
   draw()
   persistSession()
@@ -1503,6 +1514,7 @@ if (new URLSearchParams(location.search).has('dev')) {
   // to reach into `src/` for a function the app itself does not import
   w.__frameCore = {
     render,
+    outputRect,
     drawMat,
     drawBackground,
     drawText,

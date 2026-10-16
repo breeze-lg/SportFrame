@@ -160,6 +160,20 @@ export function frameRect(size: Size, aspect: number, scale: number): Rect {
   return fitRect(size, aspect, scale, 0, 0)
 }
 
+/**
+ * How far 圆角 can go before it stops being a corner: half the shorter side of the
+ * mount itself.
+ *
+ * The layout's own ceiling, like every other one in this file — `roundedRect` clamps
+ * a radius to `min(w, h) / 2` and silently draws a different shape past it, so a
+ * slider that offered more would be a control whose top half changes nothing. Measured
+ * on the *frame* rather than on the card, because the radius the record carries is
+ * the photograph's own corner: the mat's is the same number, inset by its width.
+ */
+export function radiusCeiling(rect: Rect): number {
+  return Math.max(0, Math.floor(Math.min(rect.w, rect.h) / 2))
+}
+
 /* -------------------------------------------------------------------------- */
 /* 文字 — the type block's own ceilings                                        */
 /* -------------------------------------------------------------------------- */

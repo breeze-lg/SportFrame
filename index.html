@@ -117,6 +117,12 @@
           <p>还没有照片</p>
           <button class="btn" id="add-photo" type="button">添加照片</button>
         </div>
+        <!-- 背景 的两个答案, 用海报自己的样子: see `src/ui/modebar.ts`. Below the
+             canvas rather than in the panel, because the two posters differ in *size*
+             before they differ in anything else, and only a preview can say so. The
+             discs inside it are revealed with a transition when 无照片 is chosen —
+             which is why the element is built once and only ever synced. -->
+        <div class="modebar" id="modebar"></div>
         <!-- In the pane rather than in the wall: the toast is a remark about the
              poster, and the pane's bottom edge is the poster's own — anchored
              to the wall it would land on the caption. -->
@@ -221,17 +227,6 @@
            and `.plaque-row` do. -->
       <div class="controls" id="controls">
         <div class="rail-h"><b>画面</b></div>
-        <!-- The 背景 heading is visible, not just an `aria-label`, and that is not
-             decoration: 无照片 names what is *not* in the background, and a user
-             reading it under a bare 画面 heading could take it for a claim about
-             the poster. Under 背景 it can only mean the one thing it means. -->
-        <div class="rail-h"><b>背景</b></div>
-        <div class="seg" id="control-modes"></div>
-        <!-- 白边's surface — 白 or 模糊 — rendered whole (heading included) by
-             `renderMatFill` and hidden in the modes where the border is not the
-             poster's background. Kept in the DOM rather than created here for the
-             reason every other host is: the panel rebuilds, this element does not. -->
-        <div class="mat-fill" id="control-mat" hidden></div>
         <div class="ctl-row" id="control-row"></div>
       </div>
     </div>
