@@ -4,6 +4,15 @@ Turn a good photograph into a framed poster worth posting. Drop in a photo; the
 app puts a white mat, a shadow, a background treatment, and a camera spec plate
 around it, and exports a PNG at social-ready resolution.
 
+## 样张 — the look, in two pictures
+
+Two processed samples: the photograph on top, a coloured band under it carrying one
+line of words in a colour of its own.
+
+| | |
+|---|---|
+| ![LIFE](docs/sample_3.jpg) | ![Carpe Diem](docs/sample_4.jpg) |
+
 Photographs are a list. Load one or a dozen — the picker takes several at once,
 and a drop or a paste can carry a folder's worth — and the left column keeps them
 with the one on the wall marked, switchable, and removable. The wall is always
