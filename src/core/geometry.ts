@@ -41,7 +41,7 @@ export function cover(
  * The mount's own rectangle inside a `size` canvas: the frame grown by its mat,
  * at the offsets the record carries.
  *
- * This is what a 无照片 poster *is* — the photograph and its border, with no paper
+ * This is what a 无背景 poster *is* — the photograph and its border, with no paper
  * around them — and it is measured with the same two functions `render` lays the
  * mount out with, so a crop can never disagree with what was drawn. The offsets
  * are included even though the mode ignores them: a record that carries `ox` is a

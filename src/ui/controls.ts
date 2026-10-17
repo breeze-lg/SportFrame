@@ -116,7 +116,7 @@ const LABELS: Record<ControlId, { label: string; unit: string }> = {
  * change, in the order a user meets them — and, above them, the one choice that
  * is not a number: 背景 (`renderBackgroundModes`).
  *
- * The 后景 numbers belong to 虚化 and are drawn only there. 无照片 puts nothing
+ * The 后景 numbers belong to 虚化 and are drawn only there. 无背景 puts nothing
  * behind the photograph, so a 后景虚化 slider would accept a drag and change
  * nothing on the wall — the same rule that keeps 文字 off 留白: a control that
  * cannot change the poster is the failure this app's architecture spends its
@@ -182,7 +182,7 @@ export function controlSpecs(t: Template, ctx: ControlContext): ControlSpec[] {
     },
   )
 
-  // 后景 — the numbers 虚化 is made of, and only 虚化. 无照片 draws nothing behind
+  // 后景 — the numbers 虚化 is made of, and only 虚化. 无背景 draws nothing behind
   // the photograph, so a 后景虚化 slider there would accept a drag and change
   // nothing on the wall — the same rule that keeps 文字 off 留白: a control that
   // cannot change the poster is the failure this app's architecture spends its
@@ -201,7 +201,7 @@ export function controlSpecs(t: Template, ctx: ControlContext): ControlSpec[] {
   // not refuse it; it just must not hand a range input `min="20" max="3"`,
   // which some engines clamp and others flip.
   //
-  // 无照片 is filtered last, and deliberately: its delivery is the mount's own box
+  // 无背景 is filtered last, and deliberately: its delivery is the mount's own box
   // (see `outputRect`), so the canvas follows the card, and the numbers that only
   // move or resize the *window* — 前景大小, 水平位置, 垂直位置 — cannot change that
   // poster or that file. 圆角, 白边 and 下白边 stay, because every one of them
@@ -296,14 +296,14 @@ export function settleTemplate(t: Template, ctx: ControlContext): Template {
  *
  * - 带背景 — the photograph again, out of focus, filling a canvas of the
  *   template's own shape.
- * - 无照片 — no canvas at all: the delivery is the mount's own box, so a 1000×1000
+ * - 无背景 — no canvas at all: the delivery is the mount's own box, so a 1000×1000
  *   poster whose photograph and border measure 800×800 is written at 800×800.
  */
 export type BackgroundMode = 'blur' | 'mount'
 
 export const BACKGROUND_MODES: { id: BackgroundMode; label: string }[] = [
   { id: 'blur', label: '带背景' },
-  { id: 'mount', label: '无照片' },
+  { id: 'mount', label: '无背景' },
 ]
 
 /**
@@ -314,11 +314,11 @@ export const BACKGROUND_MODES: { id: BackgroundMode; label: string }[] = [
  * it, and a refresh brings it back.
  *
  * The numbers survive the switch. `blur`, `zoom` and `darken` mean nothing to
- * 无照片 — nothing is drawn there — but they are what 虚化 is made of, and a user
+ * 无背景 — nothing is drawn there — but they are what 虚化 is made of, and a user
  * stepping out to an empty canvas and back expects the backdrop they left rather
  * than a new one.
  *
- * Nothing is invented for 无照片. It draws nothing at all, and the one record that
+ * Nothing is invented for 无背景. It draws nothing at all, and the one record that
  * has something to draw is 样张, whose white sheet is *authored* (`background.color`)
  * because its plate is printed on it — not a colour a control set, and not a colour
  * a user picks. 虚化 is the mode that needs a number invented for it: 样张 carries
@@ -329,7 +329,7 @@ export const BACKGROUND_MODES: { id: BackgroundMode; label: string }[] = [
  */
 /**
  * The record as if this mode had just been chosen: the mode, a blur to be blurred by
- * when that is what 带背景 needs, and the offsets zeroed where 无照片 has nowhere to
+ * when that is what 带背景 needs, and the offsets zeroed where 无背景 has nowhere to
  * move the card to.
  *
  * Split from `setBackgroundMode` because two callers need it *without* the
@@ -342,7 +342,7 @@ export function withBackground(t: Template, mode: BackgroundMode, ctx: ControlCo
   // 带背景 needs a blur to be blurred by. The default is the middle of what the
   // built-ins authored, not the maximum, which would be a look nobody chose.
   if (mode === 'blur' && !(background.blur ?? 0)) background.blur = 40
-  // 无照片 delivers the mount's own box, so the offsets have nowhere to move the
+  // 无背景 delivers the mount's own box, so the offsets have nowhere to move the
   // card *to*: a window cannot be off-centre inside itself. Zeroed only where there
   // is something to zero — a record that never carried offsets keeps the frame it
   // had, which is what stops a round trip out and back from lighting up 已调整 about
@@ -392,7 +392,7 @@ export function renderBackgroundModes(
 /** What the 白边 row needs to know about the poster it is adjusting. */
 export type MatFillPanel = {
   /** Drawn at all? The border has to *be* the poster's background for this to be a
-   *  choice worth offering, and that is 无照片: the card is all there is. On
+   *  choice worth offering, and that is 无背景: the card is all there is. On
    *  带背景's blurred backdrop the same blur is a border nobody can see. */
   shown: boolean
   /** Live? A card with no border has nothing to fill. Drawn disabled rather than

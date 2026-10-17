@@ -128,7 +128,7 @@
         <!-- 背景 的两个答案, 用海报自己的样子: see `src/ui/modebar.ts`. Below the
              canvas rather than in the panel, because the two posters differ in *size*
              before they differ in anything else, and only a preview can say so. The
-             discs inside it are revealed with a transition when 无照片 is chosen —
+             discs inside it are revealed with a transition when 无背景 is chosen —
              which is why the element is built once and only ever synced. -->
         <div class="modebar" id="modebar"></div>
         <!-- In the pane rather than in the wall: the toast is a remark about the
@@ -227,7 +227,7 @@
       <!-- 画面 — the mount's own geometry: one choice (背景: is the photograph in
            the background or not) above one slider per number this template can
            change (see `src/ui/controls.ts`). Same construction and the same rule
-           as 文字: the rows are the template's, not a fixed board, so 无照片 gets a
+           as 文字: the rows are the template's, not a fixed board, so 无背景 gets a
            底色 row and no 后景 rows rather than sliders that move nothing. Its two
            actions used to live in this heading; they are in the row above now, with
            the words' typography as well as these numbers. The block sets its own

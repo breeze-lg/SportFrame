@@ -251,3 +251,35 @@ test('重置 and 撤销 cover the typography, like everything else in the record
   await expect(page.locator('#record-acts')).toHaveAttribute('data-adjusted', 'false')
   expect(await digest(page)).toBe(asAuthored)
 })
+
+/**
+ * 文字的颜色 — the fourth thing a slot has, and the only one that is a colour.
+ *
+ * A swatch is easy to fake: painting the input is not painting the poster. This
+ * asserts both halves — the record carries the hex, and the wall's ink actually
+ * moved — plus the reading-back, because the panel has to describe the record it
+ * is holding and not the value the pointer asked for.
+ */
+test('a slot can be set in a colour of its own', async ({ page }) => {
+  await page.goto('/')
+  await load(page)
+  await chip(page, '拍立得').click()
+  await words(page)
+
+  // a caption has to say something before its colour can be seen on the wall
+  await page.locator('#field-title').fill('SPORT')
+  const before = await textOf(page)
+  expect(before.slots[0].color, 'the template authored no colour').toBeTruthy()
+  const plain = await digest(page)
+
+  const swatch = page.locator('#fields .slot-block .ctl-color').first()
+  await expect(swatch).toHaveValue(before.slots[0].color.toLowerCase())
+  await swatch.fill('#e0004d')
+
+  // the record holds it, lower-cased by the input itself...
+  expect((await textOf(page)).slots[0].color).toBe('#e0004d')
+  // ...and the poster is *painted* in it
+  expect(await digest(page), 'the colour never reached the wall').not.toBe(plain)
+  // ...and the panel reads the value back, hex and all
+  await expect(page.locator('#fields .slot-block .ctl-val').last()).toHaveText('#e0004d')
+})

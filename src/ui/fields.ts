@@ -60,6 +60,9 @@ export type SlotSpec = {
   sizeMin: number
   sizeMax: number
   family: string
+  /** The colour this line is set in. Required on the record (`TextSlot.color`), so
+   *  the swatch never has to invent one — `drawText` paints exactly this string. */
+  color: string
 }
 
 export type WordsPanel = {
@@ -101,6 +104,7 @@ export function wordsPanel(
       sizeMin: 0,
       sizeMax: sizeCeiling(ctx.size, config, ctx.frame, ctx.matBottom, index),
       family: slot.family ?? DEFAULT_FAMILY,
+      color: slot.color,
     })
   })
 
@@ -129,6 +133,7 @@ export type WordsHandlers = {
   onInput: (id: TextSlotId, value: string) => void
   onSize: (index: number, size: number) => void
   onFamily: (index: number, family: string) => void
+  onColor: (index: number, color: string) => void
   onAnchor: (anchor: TextAnchor) => void
   onOffset: (axis: 'dx' | 'dy', value: number) => void
   /** Load a font file *for this slot* — the row's ＋ button. */
@@ -191,6 +196,44 @@ function slider(
 }
 
 /**
+ * One colour, as a swatch you can click.
+ *
+ * `<input type="color">` rather than a hex field: the record already holds a hex
+ * string (`slot.color`, authored per template), and a picker is the one control that
+ * cannot be typed into an invalid colour — `fillStyle` *ignores* a value it cannot
+ * parse and keeps the last one, so a typo would silently paint yesterday's colour.
+ * The readout beside it is the value itself, because a swatch alone cannot say
+ * whether the caption is `#3A3833` or `#2B2B2B`.
+ */
+function colorRow(
+  name: string,
+  value: string,
+  aria: string,
+  onInput: (v: string) => void,
+): HTMLElement {
+  const row = document.createElement('div')
+  row.className = 'ctl'
+
+  const label = document.createElement('span')
+  label.className = 'ctl-name'
+  label.textContent = name
+
+  const input = document.createElement('input')
+  input.className = 'ctl-color'
+  input.type = 'color'
+  input.value = value
+  input.setAttribute('aria-label', aria)
+  input.addEventListener('input', () => onInput(input.value.toLowerCase()))
+
+  const readout = document.createElement('span')
+  readout.className = 'ctl-val'
+  readout.textContent = value
+
+  row.append(label, input, readout)
+  return row
+}
+
+/**
  * Puts the panel's numbers back in step with a record that may have been
  * settled, without rebuilding the DOM — a slider re-created under the pointer
  * loses the drag, which is the same reason `syncControls` exists for 画面.
@@ -220,6 +263,14 @@ export function syncFields(host: HTMLElement, panel: WordsPanel): void {
     set(block.querySelector('.ctl-range'), slot.size, slot.sizeMin, slot.sizeMax)
     const pick = block.querySelector('.font-pick') as HTMLSelectElement | null
     if (pick && pick.value !== slot.family) pick.value = slot.family
+    // `type="color"` reports lower-cased hex, and the record keeps the case the
+    // template authored — so the comparison ignores it and the readout does not.
+    const swatch = block.querySelector('.ctl-color') as HTMLInputElement | null
+    if (swatch) {
+      if (swatch.value.toLowerCase() !== slot.color.toLowerCase()) swatch.value = slot.color
+      const out = swatch.parentElement?.querySelector('.ctl-val')
+      if (out) out.textContent = slot.color
+    }
   })
 }
 
@@ -372,6 +423,10 @@ export function renderFields(
         (v) => handlers.onSize(slot.index, v),
         `${slot.label}字号`,
       ),
+    )
+
+    block.appendChild(
+      colorRow('颜色', slot.color, `${slot.label}颜色`, (v) => handlers.onColor(slot.index, v)),
     )
 
     host.appendChild(block)

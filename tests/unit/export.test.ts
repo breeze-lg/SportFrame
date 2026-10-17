@@ -15,7 +15,7 @@ import type { Photo } from '../../src/core/types'
 /**
  * The size the file will be.
  *
- * 无照片 is the whole reason this function exists: the mode has no canvas, so the
+ * 无背景 is the whole reason this function exists: the mode has no canvas, so the
  * delivery is the mount's own box — the 800×800 a 1000×1000 poster crops down to.
  * Everything that budgets, draws or reports a size asks it, so the claim worth
  * pinning is that they cannot disagree.
@@ -30,7 +30,7 @@ describe('deliverySize', () => {
     expect(deliverySize(size, template, photo)).toEqual(size)
   })
 
-  it('is the mount’s own box in 无照片, rounded to whole pixels', () => {
+  it('is the mount’s own box in 无背景, rounded to whole pixels', () => {
     const t = getTemplate('polaroid')!
     const size = resolveSize(t.canvas.ratio, 1440)
     const card = mountRect(size, aspectOf(t.canvas.ratio, photo), t.frame)
@@ -39,7 +39,7 @@ describe('deliverySize', () => {
     // remainder; the size the poster *is* has to be a size a file can be.
     expect(delivery).toEqual({ W: Math.round(card.w), H: Math.round(card.h) })
     // ...and it is the crop the mode promises: smaller than the canvas it was
-    // measured in, which is the field a 无照片 file does not carry.
+    // measured in, which is the field a 无背景 file does not carry.
     expect(delivery.W).toBeLessThan(size.W)
     expect(delivery.H).toBeLessThan(size.H)
   })
@@ -62,7 +62,7 @@ describe('deliverySize', () => {
     const t = getTemplate('classic')!
     const size = resolveSize(t.canvas.ratio, 1440)
     expect(deliverySize(size, t, null)).toEqual(size)
-    // 无照片 with no photograph has no mount to measure, and `render` draws no
+    // 无背景 with no photograph has no mount to measure, and `render` draws no
     // mount: the canvas is the answer rather than a zero.
     expect(deliverySize(size, { ...t, background: { mode: 'mount' } }, null)).toEqual(size)
   })

@@ -4,7 +4,7 @@ import { TEMPLATES, getTemplate } from '../../src/core/templates'
 import { matSumCeiling } from '../../src/core/limits'
 
 /**
- * 无照片's rectangle: the mount's own box inside a canvas of the template's shape.
+ * 无背景's rectangle: the mount's own box inside a canvas of the template's shape.
  *
  * This is what the mode delivers — a 1000×1000 poster whose photograph and border
  * measure 800×800 is written at 800×800 — so the claim here is a claim about the
@@ -35,7 +35,7 @@ describe('mountRect', () => {
       expect(card.y, t.id).toBeGreaterThanOrEqual(0)
       expect(card.x + card.w, t.id).toBeLessThanOrEqual(size.W)
       expect(card.y + card.h, t.id).toBeLessThanOrEqual(size.H)
-      // ...and it is smaller than the canvas, or 无照片 would be a mode that did
+      // ...and it is smaller than the canvas, or 无背景 would be a mode that did
       // nothing: the field the crop removes has to be there to remove.
       expect(card.w, t.id).toBeLessThan(size.W)
       expect(card.h, t.id).toBeLessThan(size.H)

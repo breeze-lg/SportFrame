@@ -71,7 +71,7 @@ export function stamp(d: Date): string {
 
 /**
  * The size the file will actually be, for a template and a photograph: the whole
- * canvas, or the mount's own box in 无照片 — the 800×800 a 1000×1000 poster crops
+ * canvas, or the mount's own box in 无背景 — the 800×800 a 1000×1000 poster crops
  * down to.
  *
  * Deliberately the one place a *size* is derived from a record, and everything that

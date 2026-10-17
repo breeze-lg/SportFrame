@@ -57,7 +57,7 @@ export function drawBlurredPhoto(
  * The rectangle a poster is *delivered* as.
  *
  * For 带背景 this is the whole canvas: the poster is the paper, and the file is the
- * paper. 无照片 (`mount`) is the exception, and it is the whole point of the mode — a
+ * paper. 无背景 (`mount`) is the exception, and it is the whole point of the mode — a
  * 1000×1000 poster whose photograph and border measure 800×800 is delivered at
  * 800×800, because the paper around the mount is not part of the picture, so it is
  * not part of the file.
@@ -78,7 +78,7 @@ export function outputRect(size: Size, template: Template, aspect: number): Rect
 }
 /**
  * Where the window sits inside the canvas, as a translation. Zero for every mode
- * but 无照片, where the canvas has been moved onto the mount: the layout is still
+ * but 无背景, where the canvas has been moved onto the mount: the layout is still
  * measured in the template's own canvas, and the delivery is that canvas seen
  * through a window positioned over the card.
  */
@@ -105,7 +105,7 @@ export function drawBackground(
     return
   }
 
-  // 无照片 — nothing behind the photograph: the card, on transparency wherever the
+  // 无背景 — nothing behind the photograph: the card, on transparency wherever the
   // card does not reach. A record with a `color` gets that sheet instead (样张,
   // whose plate is printed on it), which shows only in a rounded card's corners.
   //

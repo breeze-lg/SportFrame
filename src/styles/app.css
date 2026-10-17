@@ -115,7 +115,7 @@ body.ceremony-open .topbar { opacity: 0; pointer-events: none; visibility: hidde
   width: 100%;
   display: flex;
   /* A column, because the poster is not alone in this pane: `#modebar` — 背景's two
-     previews and, in 无照片, 白边's discs — belongs *under* the picture, and a row
+     previews and, in 无背景, 白边's discs — belongs *under* the picture, and a row
      would put it beside one. The two are one group, centred together, so the bar
      keeps the poster's own margin instead of floating off toward the caption. */
   flex-direction: column;
@@ -281,6 +281,26 @@ canvas#cv:not([width]) { visibility: hidden; }
   justify-content: center;
 }
 
+/* 文字的颜色 — a swatch in the slot's own row, level with the 字号 slider so the three
+   rows of a block read as one. The native picker is the control; this is its skin.
+   The readout beside it is the hex itself: a swatch alone cannot tell #3A3833 from
+   #2B2B2B, and the record holds a value a shared template has to reproduce. */
+.ctl-color {
+  flex: none;
+  width: 30px;
+  height: 20px;
+  margin: 0 2px;
+  padding: 0;
+  border: 1px solid var(--bevel);
+  border-radius: 2px;
+  background: none;
+  cursor: pointer;
+}
+.ctl-color::-webkit-color-swatch-wrapper { padding: 2px; }
+.ctl-color::-webkit-color-swatch { border: 0; border-radius: 1px; }
+.ctl-color::-moz-color-swatch { border: 0; border-radius: 1px; }
+.ctl-color:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
 /* 文字 — one field per slot the current template prints. The block sets its own
    `display`, so it needs its own `[hidden]` rule for the same reason
    `.plaque-row` does: without it, the UA's rule loses and an empty 文字 heading
@@ -379,7 +399,7 @@ canvas#cv:not([width]) { visibility: hidden; }
   height: 62px;
   border: 1px solid var(--bevel);
   border-radius: 2px;
-  /* The device grey rather than the surface white: a 无照片 poster is a *white card*
+  /* The device grey rather than the surface white: a 无背景 poster is a *white card*
      on nothing, and white on white is a chip that reads as empty — 样张's preview
      vanished into its own box on a light wall. `--device` is the app's own paper
      grey, so the card reads as a card in both themes. */
@@ -512,11 +532,11 @@ canvas#cv:not([width]) { visibility: hidden; }
 .toast.show { opacity: 1; }
 
 /* 背景, under the poster — `src/ui/modebar.ts`. Two previews of the *same*
-   photograph, made the two ways this app can make a poster, and then — in 无照片
+   photograph, made the two ways this app can make a poster, and then — in 无背景
    only — the two discs the border can be made of.
 
    Under the poster rather than in the adjustments panel, and the reason is the
-   thing the control is about: 带背景 and 无照片 differ in *size* before they differ
+   thing the control is about: 带背景 and 无背景 differ in *size* before they differ
    in anything else (one is the whole canvas, the other is the mount's own box), so
    the previews are drawn at the size they will be delivered at and the smaller one
    simply *is* smaller. A word cannot do that, and `#control-modes` could not. */
@@ -528,7 +548,7 @@ canvas#cv:not([width]) { visibility: hidden; }
   margin-top: 14px;
 }
 /* Both rows are centred, and each preview is a *cell* rather than a picture sized by
-   its own bitmap. The two are deliberately different sizes — 无照片 is a smaller
+   its own bitmap. The two are deliberately different sizes — 无背景 is a smaller
    poster — and a row of two unequal pictures does not read as centred even when its
    box is. Equal cells with the pictures centred inside them is what makes the pair
    look placed. */
@@ -549,7 +569,7 @@ canvas#cv:not([width]) { visibility: hidden; }
   cursor: pointer;
 }
 /* The cell is fixed; the bitmap inside it is not, and that is the point: both are
-   rendered at the size the file will be written at, so 无照片's smaller delivery
+   rendered at the size the file will be written at, so 无背景's smaller delivery
    reads as a smaller picture — the honest answer to "what am I about to write?". */
 .mode-thumb img {
   display: block;
@@ -566,7 +586,7 @@ canvas#cv:not([width]) { visibility: hidden; }
 .mode-thumb:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 
 /* The discs — 白边's two surfaces — are *revealed in place*: the row keeps its own
-   height whether they are out or not, so choosing 无照片 never moves the poster.
+   height whether they are out or not, so choosing 无背景 never moves the poster.
    That is not tidiness. A poster that jumps when a control appears is a poster you
    have to find again, and the two rows around it had nothing to do with the choice.
 

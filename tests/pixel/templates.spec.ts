@@ -111,7 +111,7 @@ for (const theme of ['light', 'dark'] as const) {
             exif: null,
           }
 
-          // The canvas the app would deliver this poster on. 无照片 writes the
+          // The canvas the app would deliver this poster on. 无背景 writes the
           // mount's own box, so a postcard-sized canvas would be a canvas nobody
           // ever sees, and the transparency check below is about the file.
           const tplNow = getTemplate(templateId)
@@ -176,7 +176,7 @@ for (const theme of ['light', 'dark'] as const) {
       expect(nonBlank, `${id} drew nothing`).toBe(true)
 
       // invariant: nothing the poster draws is transparent. For 带背景 that is the
-      // whole canvas and the answer is zero. For 无照片 the file is the mount's own
+      // whole canvas and the answer is zero. For 无背景 the file is the mount's own
       // box, and the render above is a 480×600 probe whose mat — absolute pixels —
       // does not fit that canvas at all; the same render at the size the app writes
       // is the one this assertion is about (see the probe's `strict`). `matchGolden`

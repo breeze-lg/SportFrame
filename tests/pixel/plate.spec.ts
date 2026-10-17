@@ -258,7 +258,7 @@ function bandFor(k: number) {
   const frame = fitRect({ W: SIZE.W * k, H: SIZE.H * k }, aspect, tpl.frame.scale, 0, 0)
   const mat = matRect(frame, tpl.frame.mat, tpl.frame.matBottom, k)
   const top = frame.y + frame.h + tpl.frame.mat * k
-  // ...and then into the *delivered* frame. 样张 is a 无照片 template: the file is the
+  // ...and then into the *delivered* frame. 样张 is a 无背景 template: the file is the
   // mount's own box, and `render` gets there by translating the layout onto the card,
   // so a band measured in canvas coordinates is off by that translation — which is
   // exactly how this test first saw ink "above the band" that was in the band.
@@ -336,7 +336,7 @@ function installProbe(): void {
     }
     const photo = { el: flat, width: 64, height: 64, name: 'flat', exif: null }
 
-    // The delivered frame, not the canvas: 样张 is 无照片, so the file is the mount's
+    // The delivered frame, not the canvas: 样张 is 无背景, so the file is the mount's
     // own box and the canvas is that box — the app sizes `#cv` the same way.
     const win = outputRect(opts.size, template, aspectOf(template.canvas.ratio, photo))
     const W = Math.round(win.w * opts.k)

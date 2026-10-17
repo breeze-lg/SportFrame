@@ -23,7 +23,7 @@ export function render(input: RenderInput): void {
   // 0 is never read.
   const aspect = photo ? aspectOf(template.canvas.ratio, photo) : 0
 
-  // 无照片 is delivered as the mount's own box: the same layout — `size` is never
+  // 无背景 is delivered as the mount's own box: the same layout — `size` is never
   // touched, so every measurement below still happens against the template's
   // canvas — seen through a window that has been translated onto the card. The
   // translation is the whole of the crop: the caller sizes the canvas to

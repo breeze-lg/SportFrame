@@ -23,7 +23,7 @@ plate needs no typing: it is read from the active photograph's own EXIF.
 The mount's own geometry is adjustable too. 画面 offers one slider per number the
 current template can change: 前景大小, 水平位置/垂直位置, 圆角, 白边/下白边, and,
 where there is a photograph behind the frame, 后景放大 / 后景虚化 / 后景压暗.
-(无照片 delivers the mount's own box, so it offers the three numbers that change the
+(无背景 delivers the mount's own box, so it offers the three numbers that change the
 card and nothing else — see below.) 存为模板 keeps the numbers you set, so a look
 you tuned is a style you can pick again. The sliders cannot be driven
 into a poster the renderer would crop: every maximum is the layout's own ceiling,
@@ -252,7 +252,7 @@ always there; a poster whose type is now a feature made it worth finding.
 
 ## 白边 — paper, or the photograph
 
-In 无照片 the border is the whole background the poster has, so the bar under the
+In 无背景 the border is the whole background the poster has, so the bar under the
 poster reveals — with a transition, the one animated thing in this app — two discs:
 
 | | the border is |
@@ -281,7 +281,7 @@ mat gets the picture, softened; a 104px band gets a colour the picture is made o
 
 Two rules about where it is offered:
 
-- **Only in 无照片.** On 带背景's blurred backdrop the same blur is a border nobody
+- **Only in 无背景.** On 带背景's blurred backdrop the same blur is a border nobody
   can see — the failure this row refuses everywhere else. The discs are *present but
   closed* on 带背景 rather than absent, because the row is a transition's two states
   and an element rebuilt on the way in would have nothing to animate from; the same
@@ -382,7 +382,7 @@ that, and both are load-bearing:
 - Raising one control never moves another *except* the offsets, which have less
   room as the photograph grows — so a write settles the frame afterwards rather
   than clamping only what the user touched.
-- 后景 is not offered where there is no 后景. 无照片 draws nothing behind the
+- 后景 is not offered where there is no 后景. 无背景 draws nothing behind the
   photograph at all — and 样张 ships as one — so a 后景虚化 slider in it would accept
   a drag and change nothing, which is the failure 文字 already refuses for 留白.
 
@@ -391,7 +391,7 @@ that, and both are load-bearing:
 says 「无」 at zero rather than 「0px」, because zero here is a *state* and not a
 measurement: a poster with square corners is a poster with no radius, and a number
 sitting where a word belongs is the sort of thing this panel does not do. It is
-offered in both modes, and in 无照片 it is one of only three rows that are, because
+offered in both modes, and in 无背景 it is one of only three rows that are, because
 the radius changes the card — and in that mode the card is the file.
 
 ## 背景 — two posters
@@ -403,12 +403,12 @@ what is drawn and how big the file is:
 | | what it is | what it delivers |
 |---|---|---|
 | 带背景 | the photograph again, cover-cropped and out of focus, on a canvas of the template's own shape | 1152×1440 for a 4:5 template at this long edge |
-| 无照片 | no canvas to speak of: the poster is the mount — the photograph and its border | **the mount's own box**: a 1000×1000 poster whose photograph and border measure 800×800 is written at 800×800 |
+| 无背景 | no canvas to speak of: the poster is the mount — the photograph and its border | **the mount's own box**: a 1000×1000 poster whose photograph and border measure 800×800 is written at 800×800 |
 
 **Why pictures, and why down there.** The two differ in size before they differ in
 anything else, and only a preview can say so: both thumbnails are rendered, through
 the same `styleThumb` the rack uses, at the size the file will be written at, into
-one fixed box — so 无照片's is simply *smaller*, and the difference you see is the
+one fixed box — so 无背景's is simply *smaller*, and the difference you see is the
 difference you get. The panel keeps the numbers; this is not a number. `#control-modes`
 was words, and words cannot do that.
 
@@ -421,23 +421,23 @@ transition from.
 The mode is a property of the record, so the choice is a record write like any
 slider's: 已调整 appears, 重置 goes back to the style as authored, 撤销 walks back
 through it, 存为模板 keeps it, and a refresh brings it back. A round trip out to
-无照片 and back clears 已调整 on its own, because the record is back where it
+无背景 and back clears 已调整 on its own, because the record is back where it
 started — that is the whole of what the marker means.
 
 **One function decides every size.** `outputRect` in `src/core/background.ts` (and
 `deliverySize`, its rounding wrapper in `src/ui/export.ts`) answers with the whole
 canvas for 带背景, and with `mountRect` — the frame grown by its mat, the same two
-functions `render` lays the mount out with — for 无照片. The screen canvas, the
+functions `render` lays the mount out with — for 无背景. The screen canvas, the
 export, the area budget the export ladder walks, the size printed beside the rack,
 and the two previews under the poster all ask it. A preview that showed a card while
 the file carried a field around it, or a budget computed against a canvas the file is
 not going to be, is the app lying about what it is about to write.
 
-**The crop is the whole of 无照片.** `render` never changes `size`: every
+**The crop is the whole of 无背景.** `render` never changes `size`: every
 measurement still happens against the template's canvas, and the delivery is that
 canvas seen through a window that has been translated onto the card. That is why
 the mode zeroes `ox`/`oy` on the way in — a window cannot be off-centre inside
-itself — and why 无照片 offers 圆角, 白边 and 下白边 and nothing else: 前景大小 resizes
+itself — and why 无背景 offers 圆角, 白边 and 下白边 and nothing else: 前景大小 resizes
 the window and 水平位置/垂直位置 move it, so none of the three can change the poster,
 while the radius and the mat *are* the poster's border and the file grows with them.
 Wanting more pixels is the export's ladder (1×/2×/4×), not a slider.
@@ -447,7 +447,7 @@ removed: it is still "the photograph in the background", which the row does not 
 about. 透明 — nothing behind the photograph, on the full canvas — was also built and
 removed, and for the same shape of reason: with a second answer that keeps the canvas
 and empties it, the row is asking two questions at once ("what is behind it" and "how
-big is the file"). The two that remain answer one: 带背景 and 无照片 are the two
+big is the file"). The two that remain answer one: 带背景 and 无背景 are the two
 *deliveries*, the canvas and the mount's own box. `background.mode` is
 `'blur' | 'mount'`, and a mode nothing can set is a branch nothing can reach.
 
@@ -458,11 +458,11 @@ Three more things are load-bearing:
   camera plate over a punched-out background is a caption floating in the void. No
   control writes that colour; it is part of the template the way `frame.radius` is,
   and it survives a trip out to 带背景 and back so the card is never quietly left
-  bare. In 无照片 it shows only where the mount does not reach it — the corners of a
+  bare. In 无背景 it shows only where the mount does not reach it — the corners of a
   rounded card. `validateTemplate` refuses a `color` that is not `#rrggbb`, because
   `fillStyle` *ignores* a value it cannot parse and keeps the last one.
 - **The numbers survive the switch.** `blur`, `zoom` and `darken` mean nothing to
-  无照片 — nothing is drawn there — but they are what 带背景 is made of, and
+  无背景 — nothing is drawn there — but they are what 带背景 is made of, and
   a user stepping out and back expects the backdrop they left, not a new one.
 - **带背景 on a flat card invents a blur.** 样张 carries none, and a 带背景 that drew
   a sharp backdrop under its own label is a control lying about what it did. The

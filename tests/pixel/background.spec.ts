@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
   await page.waitForFunction(() => '__frame' in window)
 })
 
-test('无照片 with a sheet is that sheet; without one the wall is the app slate', async ({ page }) => {
+test('无背景 with a sheet is that sheet; without one the wall is the app slate', async ({ page }) => {
   // 样张's authored `color` — the one record that has a sheet, because its plate
   // is printed on it.
   const filled = await page.evaluate(async () => {

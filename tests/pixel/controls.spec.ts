@@ -27,7 +27,7 @@ const readout = (page: Page, id: string) => page.locator(`.ctl[data-id="${id}"] 
  *  for any order at all. */
 const FRAME = ['前景大小', '水平位置', '垂直位置', '圆角', '白边', '下白边']
 const BACKDROP = ['后景放大', '后景虚化', '后景压暗']
-/** 无照片 delivers the mount's own box, so the numbers that only move or resize the
+/** 无背景 delivers the mount's own box, so the numbers that only move or resize the
  *  *window* — 前景大小 and the two offsets — cannot change that poster or its file.
  *  圆角 and the two borders stay: every one of them changes the card, and in this
  *  mode the card is the poster. */
@@ -144,7 +144,7 @@ async function corner(page: Page): Promise<number[]> {
   })
 }
 
-/** ...and its alpha, which is what 无照片 is a claim about. */
+/** ...and its alpha, which is what 无背景 is a claim about. */
 async function cornerAlpha(page: Page): Promise<number> {
   return page.evaluate(() => {
     const cv = document.querySelector('canvas#cv') as HTMLCanvasElement
@@ -173,14 +173,14 @@ test('the 背景 choice is two posters, drawn under the poster', async ({ page }
   await loadPhoto(page)
   await chip(page, '拍立得').click()
   const thumbs = page.locator('#modebar .mode-thumb')
-  // 带背景 / 无照片 — a canvas with the photograph on it, and no canvas at all.
-  expect(await thumbs.allTextContents()).toEqual(['带背景', '无照片'])
+  // 带背景 / 无背景 — a canvas with the photograph on it, and no canvas at all.
+  expect(await thumbs.allTextContents()).toEqual(['带背景', '无背景'])
   expect(await page.locator('#modebar .mode-thumb.on')).toHaveText('带背景')
 
   // Both are pictures of the poster this record would make, so both carry one.
   const art = (i: number) => thumbs.nth(i).locator('img')
   for (const i of [0, 1]) expect(await art(i).getAttribute('src'), String(i)).toMatch(/^data:image\//)
-  // ...and 无照片's is *smaller*, because its poster is: the previews are drawn at
+  // ...and 无背景's is *smaller*, because its poster is: the previews are drawn at
   // the size the file will be. That is the whole reason this row is not words.
   const box = async (i: number) =>
     art(i).evaluate((el: HTMLImageElement) => [el.naturalWidth, el.naturalHeight])
@@ -194,14 +194,14 @@ test('the 背景 choice is two posters, drawn under the poster', async ({ page }
     page.locator(`.print[aria-label="${name}"]`).evaluate((el) => (el as HTMLElement).style.backgroundImage)
   const blurredChip = await chipArt('经典')
   await thumbs.nth(1).click()
-  expect(await page.locator('#modebar .mode-thumb.on')).toHaveText('无照片')
+  expect(await page.locator('#modebar .mode-thumb.on')).toHaveText('无背景')
   expect(await page.locator('#rail-info')).toContainText('拍立得 · 769×1058')
-  expect(await chipArt('经典'), 'the rack kept drawing a backdrop in 无照片').not.toBe(blurredChip)
+  expect(await chipArt('经典'), 'the rack kept drawing a backdrop in 无背景').not.toBe(blurredChip)
   await page.locator('.print[aria-label="拍立得"]').click()
-  expect(await page.locator('#modebar .mode-thumb.on')).toHaveText('无照片')
+  expect(await page.locator('#modebar .mode-thumb.on')).toHaveText('无背景')
 })
 
-test('无照片 delivers the mount’s own box: the poster is the card', async ({ page }) => {
+test('无背景 delivers the mount’s own box: the poster is the card', async ({ page }) => {
   await page.goto('/')
   await loadPhoto(page)
   await chip(page, '拍立得').click()
@@ -269,7 +269,7 @@ test('圆角 is one slider, and it says 无 rather than 0 when the corners are s
   expect(await digest(page), 'putting the radius back did not restore the poster').toBe(bare)
 
   // ...and it is *visible* where it can be. 带背景 paints the whole canvas, so a
-  // rounded poster's own corner is covered by its backdrop there; it is in 无照片,
+  // rounded poster's own corner is covered by its backdrop there; it is in 无背景,
   // where the card is the file, that a rounded corner puts a hole in the file —
   // near-zero rather than zero, because the card's shadow still reaches that pixel.
   await set(page, '圆角', 24)
@@ -280,7 +280,7 @@ test('圆角 is one slider, and it says 无 rather than 0 when the corners are s
   await set(page, '圆角', 0)
 })
 
-test('无照片 keeps what 带背景 is made of: a step out and back returns the backdrop', async ({ page }) => {
+test('无背景 keeps what 带背景 is made of: a step out and back returns the backdrop', async ({ page }) => {
   await page.goto('/')
   await loadPhoto(page)
   await chip(page, '经典').click()
@@ -304,7 +304,7 @@ test('无照片 keeps what 带背景 is made of: a step out and back returns the
   expect(back.template.frame).toMatchObject(before.template.frame)
 
   // Back where it started, and the app says so: the marker is the difference from
-  // the template as authored, so a round trip through 无照片 is not an edit.
+  // the template as authored, so a round trip through 无背景 is not an edit.
   expect(await page.locator('#record-acts')).toHaveAttribute('data-adjusted', 'false')
 })
 
@@ -344,7 +344,7 @@ test('白边 can be filled with the photograph, blurred', async ({ page }) => {
   const border = await pixelAt(page, 8, 8)
   expect(border).not.toEqual([255, 255, 255])
   expect(border).not.toEqual([42, 50, 56])
-  // A fill, not a size: the crop 无照片 delivers is untouched.
+  // A fill, not a size: the crop 无背景 delivers is untouched.
   expect(
     await page.evaluate(() => {
       const cv = document.querySelector('canvas#cv') as HTMLCanvasElement
@@ -380,22 +380,22 @@ test('the 白边 discs wait disabled until there is a border to fill', async ({ 
   expect(await pixelAt(page, 20, 20)).not.toEqual([255, 255, 255])
 })
 
-test('样张 keeps its white sheet: 无照片 there is a card, and the card is the file', async ({ page }) => {
+test('样张 keeps its white sheet: 无背景 there is a card, and the card is the file', async ({ page }) => {
   await page.goto('/')
   await loadPhoto(page)
   await chip(page, '样张').click()
-  // 样张 ships as 无照片 — the poster is the card — and *with* a sheet, because its
+  // 样张 ships as 无背景 — the poster is the card — and *with* a sheet, because its
   // plate is printed on it. That colour is authored, not a control: a camera plate
   // over a punched-out background is a caption floating in the void. The mode is the
-  // wall's, though, so a pick keeps the one you are in: this test chooses 无照片
+  // wall's, though, so a pick keeps the one you are in: this test chooses 无背景
   // explicitly, which is also the mode the template ships with.
   await page.locator('#modebar .mode-thumb[data-mode="mount"]').click()
-  expect(await page.locator('#modebar .mode-thumb.on')).toHaveText('无照片')
+  expect(await page.locator('#modebar .mode-thumb.on')).toHaveText('无背景')
   expect(await corner(page)).toEqual([255, 255, 255])
   expect((await saved(page)).template.background.color).toBe('#FFFFFF')
 })
 
-test('无照片 keeps no 后景 rows, and 带背景 keeps the three', async ({ page }) => {
+test('无背景 keeps no 后景 rows, and 带背景 keeps the three', async ({ page }) => {
   await page.goto('/')
   await chip(page, '经典').click()
   const rows = page.locator('#controls .ctl-name')
@@ -419,7 +419,7 @@ test('带背景 on 样张 is a blur, not a label on a flat card', async ({ page 
   // ...and the authored sheet is still there underneath, for the trip back.
   expect((await saved(page)).template.background.color).toBe('#FFFFFF')
   await page.locator('#modebar .mode-thumb[data-mode="mount"]').click()
-  expect(await page.locator('#modebar .mode-thumb.on')).toHaveText('无照片')
+  expect(await page.locator('#modebar .mode-thumb.on')).toHaveText('无背景')
 })
 
 test('the panel is exactly the controls the current template offers', async ({ page }) => {
@@ -431,8 +431,8 @@ test('the panel is exactly the controls the current template offers', async ({ p
     // here explicitly — otherwise 样张 would be judged in whatever mode the previous
     // chip left behind.
     await page.locator(`#modebar .mode-thumb[data-mode="${t.background.mode}"]`).click()
-    // 后景 only where there is one, and the mount's own numbers only in 无照片:
-    // 样张 ships as 无照片, so its panel is the card's three numbers and no 后景
+    // 后景 only where there is one, and the mount's own numbers only in 无背景:
+    // 样张 ships as 无背景, so its panel is the card's three numbers and no 后景
     // rows — a slider that accepts a drag and changes nothing is the failure 文字
     // already refuses for 留白.
     const expected = t.background.mode === 'blur' ? [...FRAME, ...BACKDROP] : MOUNT
@@ -594,7 +594,7 @@ test('the sliders are rebuilt for the template that is on, not carried over', as
   await set(page, '前景大小', 40)
   await set(page, '白边', 70)
 
-  // 样张's own panel, and its own numbers: it ships as 无照片, so the row set is the
+  // 样张's own panel, and its own numbers: it ships as 无背景, so the row set is the
   // card's three — 前景大小 is not a row there at all, because it would resize the
   // window the file does not contain — and a panel still holding 经典's 70px mat
   // would be a panel describing the wrong mount.

@@ -35,7 +35,7 @@ export type Frame = {
   /** 白边, not in white: the mat is filled with the photograph itself, blurred, so
    *  the picture bleeds off its own edge instead of sitting on paper. Off by default
    *  — a mat is white unless the record says so — and offered by the 画面 panel only
-   *  in the modes where the border *is* the poster's background (透明 and 无照片):
+   *  in the modes where the border *is* the poster's background (透明 and 无背景):
    *  on 带背景's blurred backdrop the same blur is a border nobody can see. Missing
    *  means white, like every other optional field here. */
   matBlur?: boolean

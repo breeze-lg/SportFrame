@@ -5,18 +5,18 @@ import { styleThumb } from './rail'
 
 /**
  * The bar under the poster: which of the two posters you are making, and — in
- * 无照片 — what its border is made of.
+ * 无背景 — what its border is made of.
  *
  * It is here rather than in the 画面 panel because both questions are questions
  * about the *whole picture*, and the only honest way to ask them is with the
- * picture: 带背景 and 无照片 differ in size before they differ in anything else (see
+ * picture: 带背景 and 无背景 differ in size before they differ in anything else (see
  * `outputRect`), and a preview is the only control that can say so. The panel keeps
  * the numbers, which are numbers.
  *
  * Same split as everywhere else in `src/ui/`: `modeBar` is a pure view model over a
  * record and a photograph, `renderModeBar` builds the DOM once, and `syncModeBar`
  * updates it — one function per job, because the discs are *revealed* with a
- * transition when 无照片 is chosen, and an element rebuilt on every paint would
+ * transition when 无背景 is chosen, and an element rebuilt on every paint would
  * never animate.
  */
 
@@ -130,7 +130,7 @@ export function renderModeBar(
       b.className = 'mode-thumb'
       b.dataset.mode = m.id
       // The preview: a poster of this photograph, made this way. The box is fixed
-      // and the bitmap is not, so 无照片's smaller delivery simply *is* smaller —
+      // and the bitmap is not, so 无背景's smaller delivery simply *is* smaller —
       // the size difference is the point of the control, and this is how it reads.
       const img = document.createElement('img')
       img.alt = ''

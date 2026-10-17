@@ -168,7 +168,7 @@ function draw(): void {
   // canvas. A `style.width` here would leave it hidden with the poster already
   // drawn inside it.
   //
-  // The *delivery* size, not the canvas: in 无照片 the poster is the mount's own
+  // The *delivery* size, not the canvas: in 无背景 the poster is the mount's own
   // box, so the preview is that box — what you see is what the file is. `render`
   // is still handed `size`, and translates the window onto the card itself.
   const delivery = deliverySize(size, template, photo)
@@ -267,7 +267,7 @@ function persistSession(): void {
  * A style, drawn in the mode the wall is in.
  *
  * 背景 is not a property of a style — it is what the poster *is* — so a chip has to
- * show its style in the mode you are working in: while you are making 无照片 posters,
+ * show its style in the mode you are working in: while you are making 无背景 posters,
  * a rack of blurred backdrops is a row of pictures of posters you cannot make from
  * here. `pick` keeps the mode for the same reason, which is what stops the preview
  * from being a picture of something the chip will not do.
@@ -314,7 +314,7 @@ function paintRail(activeId: string | null): void {
 /**
  * The line beside the rack: which mount is on, and the size of the poster it makes.
  *
- * The size is the *delivery* size — the canvas for every mode but 无照片, which
+ * The size is the *delivery* size — the canvas for every mode but 无背景, which
  * delivers the mount's own box — so it is repainted whenever the mode changes, and
  * not only when the rail does. A readout still saying 1152×1440 beside a card
  * cropped to 769×1058 would be the app describing a file it is not about to write.
@@ -473,6 +473,13 @@ function onSlotFamily(index: number, family: string): void {
   void resolveFonts()
 }
 
+function onSlotColor(index: number, color: string): void {
+  editText(`text-color:${index}`, (config) => ({
+    ...config,
+    slots: config.slots.map((s, i) => (i === index ? { ...s, color } : s)),
+  }))
+}
+
 function onAnchor(anchor: TextAnchor): void {
   editText('text-anchor', (config) => ({ ...config, anchor }))
 }
@@ -607,6 +614,7 @@ function paintFields(): void {
       onInput: onText,
       onSize: onSlotSize,
       onFamily: onSlotFamily,
+      onColor: onSlotColor,
       onAnchor,
       onOffset,
       onLoadFont: (index) => {
@@ -656,8 +664,8 @@ themeBtn.addEventListener('click', () => {
 paintTheme()
 
 /**
- * The bar under the poster: 带背景 / 无照片 as previews of this photograph, and — in
- * 无照片 — the two discs the border can be made of.
+ * The bar under the poster: 带背景 / 无背景 as previews of this photograph, and — in
+ * 无背景 — the two discs the border can be made of.
  *
  * Repainted from the two things it is a picture *of*: the record and the photograph.
  * `renderModeBar` builds it once and `syncModeBar` updates it, and that split is the
@@ -754,7 +762,7 @@ function onMatBlur(on: boolean): void {
 }
 
 /**
- * 虚化 / 无照片 — is the photograph itself in the background, or not. The write is
+ * 虚化 / 无背景 — is the photograph itself in the background, or not. The write is
  * `setBackgroundMode`'s, and everything after it is bookkeeping, exactly as in
  * `onControl` next door … with one difference: the rows have to be *rebuilt*
  * rather than synced, because the mode is what decides whether the three 后景
@@ -822,7 +830,7 @@ function pick(id: string): void {
   const t0 = getTemplate(id) ?? savedTemplates().find((x) => x.id === id)
   if (!t0) return
   // 背景 is the wall's question, not the style's. A user stepping through the rack
-  // while in 无照片 is looking for a style that works without a backdrop, and a pick
+  // while in 无背景 is looking for a style that works without a backdrop, and a pick
   // that quietly put a blur back behind the mount would be the chip's own preview
   // lying about what it does — the chips are drawn in the mode you are in
   // (`withMode`), so the pick keeps it.

@@ -43,7 +43,7 @@ describe('controlSpecs', () => {
     for (const t of TEMPLATES) {
       const ids = controlSpecs(t, ctxFor(t)).map((s) => s.id)
       // 后景放大/虚化/压暗 describe the photograph *as its own backdrop*, so only
-      // 带背景 has them: 无照片 has no backdrop at all — 样张 ships as one, too — and
+      // 带背景 has them: 无背景 has no backdrop at all — 样张 ships as one, too — and
       // a slider that accepts a drag and changes nothing is the one thing a control
       // in this app is not allowed to do.
       const backdrop: ControlId[] = t.background.mode === 'blur' ? ['zoom', 'blur', 'darken'] : []
@@ -203,7 +203,7 @@ describe('setBackgroundMode', () => {
     }
   })
 
-  it('offers 无照片 only the numbers that change the card', () => {
+  it('offers 无背景 only the numbers that change the card', () => {
     const t = getTemplate('polaroid')!
     const mounted = setBackgroundMode(t, 'mount', ctxFor(t))
     // The delivery is the mount's own box, so the canvas follows the card: 前景大小
@@ -217,7 +217,7 @@ describe('setBackgroundMode', () => {
     expect(setControl(mounted, 'radius', 20, ctxFor(t)).frame.radius).toBe(20)
   })
 
-  it('zeroes the offsets on the way into 无照片: a window cannot be off-centre inside itself', () => {
+  it('zeroes the offsets on the way into 无背景: a window cannot be off-centre inside itself', () => {
     const t = getTemplate('classic')!
     const moved = setControl(t, 'ox', 4, ctxFor(t))
     expect(moved.frame.ox).not.toBe(0)
@@ -252,7 +252,7 @@ describe('setBackgroundMode', () => {
       background: { ...base.background, zoom: 140, darken: 30, blur: 50 },
     }
     const flat = setBackgroundMode(roomy, 'mount', ctxFor(roomy))
-    // A 无照片 record still carries what 带背景 is made of: stepping out to the
+    // A 无背景 record still carries what 带背景 is made of: stepping out to the
     // mount's own box and back is meant to return the backdrop you left, not a new
     // one.
     expect(flat.background).toMatchObject({ zoom: 140, darken: 30, blur: 50 })
@@ -260,10 +260,10 @@ describe('setBackgroundMode', () => {
     expect(back.background).toMatchObject({ zoom: 140, darken: 30, blur: 50 })
   })
 
-  it('invents nothing for 无照片: the poster is the card and nothing else', () => {
+  it('invents nothing for 无背景: the poster is the card and nothing else', () => {
     const t = getTemplate('classic')!
     const mounted = setBackgroundMode(t, 'mount', ctxFor(t))
-    // 无照片 draws nothing behind the mount, and needs nothing behind it. A mode
+    // 无背景 draws nothing behind the mount, and needs nothing behind it. A mode
     // that quietly filled the canvas with a colour would be a mode lying about its
     // own name — and the card, cropped to itself, would carry a field it does not
     // have.
@@ -304,7 +304,7 @@ describe('setBackgroundMode', () => {
   })
 })
 
-describe('白边 in 无照片', () => {
+describe('白边 in 无背景', () => {
   it('is offered only where the border is the poster’s background', () => {
     const t = getTemplate('polaroid')!
     // 带背景 draws the border on a blurred backdrop, where the same blur is a

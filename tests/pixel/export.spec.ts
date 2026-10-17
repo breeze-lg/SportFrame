@@ -135,10 +135,10 @@ test('[RF-5] the advertised 4x export is drawn, not downgraded, where the device
 })
 
 /**
- * 无照片 is a claim about the *file*, and the claim is a size: a 1000×1000 poster
+ * 无背景 is a claim about the *file*, and the claim is a size: a 1000×1000 poster
  * whose photograph and border measure 800×800 is written at 800×800. The two other
  * modes are the control — same template, same photograph, full canvas — so a crop
- * that leaked into 带背景, or a canvas that leaked into 无照片, is what this catches.
+ * that leaked into 带背景, or a canvas that leaked into 无背景, is what this catches.
  * The bytes are decoded rather than the model read: the dimensions in a PNG header
  * are the ones the user gets.
  *
@@ -147,7 +147,7 @@ test('[RF-5] the advertised 4x export is drawn, not downgraded, where the device
  * so the card is 769 wide and 1058 tall. (The ratio is the template's own, not the
  * photograph's: a `4:5` canvas lays every photograph out at 4:5.)
  */
-test('无照片 exports at the mount’s own size, and 带背景 at the canvas’s', async ({ page }) => {
+test('无背景 exports at the mount’s own size, and 带背景 at the canvas’s', async ({ page }) => {
   const shots = await page.evaluate(async () => {
     const { exportPng } = (window as any).__frameExport
     const base = {
@@ -185,7 +185,7 @@ test('无照片 exports at the mount’s own size, and 带背景 at the canvas�
   })
   const by = Object.fromEntries(shots.map((s) => [s.mode, s]))
 
-  // The canvas for 带背景, and the mount's own box for 无照片: same two functions the
+  // The canvas for 带背景, and the mount's own box for 无背景: same two functions the
   // screen canvas, the export ladder and the size beside the rack all ask.
   expect([by.blur!.w, by.blur!.h]).toEqual([1152, 1440])
   expect(by.blur!.corner[3]).toBe(255)

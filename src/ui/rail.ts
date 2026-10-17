@@ -39,7 +39,7 @@ export function styleThumb(t: Template, photo: Photo | null, longEdge: number): 
   // (against the photograph, for a saved `orig` template) and the long edge.
   const size = resolveSize(t.canvas.ratio, longEdge, photo ?? undefined)
   const k = (CHIP_LONG * CHIP_DPR) / longEdge
-  // ...and the *delivery*, because 无照片 crops to the mount: a preview of that
+  // ...and the *delivery*, because 无背景 crops to the mount: a preview of that
   // poster is the card, not the canvas the card was laid out on. It is also why the
   // bitmap here can be smaller than the box — the two mode thumbs are drawn into the
   // same box, and the difference between them is the difference the app makes.
