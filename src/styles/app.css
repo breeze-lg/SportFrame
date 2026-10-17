@@ -268,17 +268,17 @@ canvas#cv:not([width]) { visibility: hidden; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Centred, and scrolling when it cannot be: `safe center` is the one value that does
-   both — a rail that fits sits in the middle of the wall, and a rail that does not
-   starts at its own left edge instead of having the first chips clipped off the top.
-   The plain `center` above it is the fallback for an engine without `safe`. */
+/* Wrapping rather than scrolling: nine chips are wider than a phone and often wider
+   than a narrow window, and a scrolling rail cannot be centred — it either clips the
+   first chip (plain `center`) or starts at the left edge (`safe center`), and a
+   strip that starts at the left edge under a centred poster is exactly the "not
+   centred" it looks like. Wrapped rows are centred, and nothing is ever off-screen. */
 .rail {
   display: flex;
+  flex-wrap: wrap;
   gap: 9px;
-  overflow-x: auto;
   padding-bottom: 2px;
   justify-content: center;
-  justify-content: safe center;
 }
 
 /* 文字 — one field per slot the current template prints. The block sets its own

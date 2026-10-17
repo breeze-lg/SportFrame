@@ -16,12 +16,14 @@ export function roundedRect(
   ctx.closePath()
 }
 
-const BEVEL_INSET = 5
 const BEVEL_ALPHA = 0.09
 
-/** The mat's own surface: the white card, and the bevel that says where its edge
- *  is. Split out so a blurred 白边 can wear the same bevel over a different
- *  surface — the card's edge is a card's edge either way. */
+/** The mat's own surface: the white card. Split out so a blurred 白边 can wear the
+ *  same card over a different surface — the card's edge is a card's edge either
+ *  way. The card carries no line of its own: a mat's bevel is cut at the *window*
+ *  (see `drawBevel`), and a hairline 5px inside the card's edge is a frame drawn on
+ *  paper that has no frame — invisible on the three sides the photograph covers,
+ *  and a very legible one in the bottom band. */
 function matSurface(
   ctx: CanvasRenderingContext2D,
   mat: Rect,
@@ -40,17 +42,23 @@ function matSurface(
   roundedRect(ctx, mat, Math.max(0, radius * k))
   ctx.fill()
   ctx.restore()
+}
 
-  // the bevel: a 1px line inset from the mat edge, on the mat surface
-  const inset = BEVEL_INSET * k
+/**
+ * The mat's bevel, and the only line a mount has: one hairline round the *window*,
+ * where the paper is actually cut.
+ *
+ * Drawn on the frame's own boundary at half a pixel, so half the stroke falls on the
+ * paper and half under the photograph — which is drawn next and covers it. What is
+ * left is the cut, on the paper, at the picture's edge. It is offered only where
+ * there is a mount (three sides or the band), because a poster with no mat has no
+ * window to cut.
+ */
+export function drawBevel(ctx: CanvasRenderingContext2D, frame: Rect, radius: number, k: number): void {
   ctx.save()
   ctx.strokeStyle = `rgba(28,27,24,${BEVEL_ALPHA})`
   ctx.lineWidth = 1 * k
-  roundedRect(
-    ctx,
-    { x: mat.x + inset, y: mat.y + inset, w: mat.w - inset * 2, h: mat.h - inset * 2 },
-    Math.max(0, radius * k),
-  )
+  roundedRect(ctx, frame, Math.max(0, radius * k))
   ctx.stroke()
   ctx.restore()
 }
@@ -109,19 +117,6 @@ export function drawBlurredMat(
   roundedRect(ctx, mat, Math.max(0, radius * k))
   ctx.clip()
   drawBlurredPhoto(ctx, mat, photo, blur, 1, blur * 3 + 8)
-  ctx.restore()
-
-  // ...and the same bevel, so the card's edge reads the same either way
-  const inset = BEVEL_INSET * k
-  ctx.save()
-  ctx.strokeStyle = `rgba(28,27,24,${BEVEL_ALPHA})`
-  ctx.lineWidth = 1 * k
-  roundedRect(
-    ctx,
-    { x: mat.x + inset, y: mat.y + inset, w: mat.w - inset * 2, h: mat.h - inset * 2 },
-    Math.max(0, radius * k),
-  )
-  ctx.stroke()
   ctx.restore()
 }
 

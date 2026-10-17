@@ -1,6 +1,6 @@
 import { drawBackground, outputOrigin } from './background'
 import { aspectOf, cover, fitRect, matRect } from './geometry'
-import { drawMat, drawBlurredMat, blurWidth, roundedRect } from './mat'
+import { drawMat, drawBlurredMat, drawBevel, blurWidth, roundedRect } from './mat'
 import { drawPlate } from './plate'
 import { drawText } from './text'
 import type { RenderInput, Rect } from './types'
@@ -58,16 +58,13 @@ export function render(input: RenderInput): void {
     )
 
     const mat = matRect(frame, template.frame.mat, template.frame.matBottom, k)
-    const inset = 1 * k
-    const card = {
-      x: mat.x + inset,
-      y: mat.y + inset,
-      w: Math.max(1, mat.w - inset * 2),
-      h: Math.max(1, mat.h - inset * 2),
-    }
-    // logical units — `drawMat` multiplies the radius by k itself — and the 1 is
-    // the same 1px inset above, before that scaling
-    const cardRadius = Math.max(0, template.frame.radius + template.frame.mat - 1)
+    // The card *is* the mount's rect — no inset. It used to be pulled in 1px on every
+    // side, which is invisible wherever the mat is there to hide it and visible
+    // exactly where it is not: with 白边 at 20 and 下白边 at 104, the bottom band came
+    // out a pixel narrower than the photograph on both sides, and a pixel high.
+    const card = mat
+    // logical units — `drawMat` multiplies the radius by k itself
+    const cardRadius = Math.max(0, template.frame.radius + template.frame.mat)
     if (template.frame.matBlur && backgroundSource) {
       // 白边 in the photograph rather than in white: the border is the picture
       // itself, blurred, bleeding past its own edge. `blurWidth` scales with the
@@ -83,6 +80,15 @@ export function render(input: RenderInput): void {
       )
     } else {
       drawMat(ctx, card, cardRadius, template.frame.shadow, k)
+    }
+
+    // The bevel: the window's cut, on the frame's own boundary, drawn after the card
+    // and before the photograph — so the picture covers the inner half of the stroke
+    // and only the cut shows on the paper. Only where there is a mount: a poster with
+    // no mat at all has no window to cut, and a line round the picture would be a
+    // frame nothing asked for.
+    if (template.frame.mat + template.frame.matBottom > 0) {
+      drawBevel(ctx, frame, template.frame.radius, k)
     }
 
     // photo, clipped to its rounded rect and drawn 1px oversized so the clip

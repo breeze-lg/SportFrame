@@ -1,7 +1,7 @@
 import { render } from './core/render'
 import { resolveSize, matRect, aspectOf, fitRect } from './core/geometry'
 import { TEMPLATES, getTemplate } from './core/templates'
-import { drawMat, roundedRect } from './core/mat'
+import { drawMat, drawBevel, roundedRect } from './core/mat'
 import { drawBackground, outputRect } from './core/background'
 import { drawText, measureToFit, frameFont, blockTop, textSpan, baseSize } from './core/text'
 import { drawPlate, plateFields, plateLines, PLATE_WEIGHTS } from './core/plate'
@@ -1541,6 +1541,7 @@ if (new URLSearchParams(location.search).has('dev')) {
     render,
     outputRect,
     drawMat,
+    drawBevel,
     drawBackground,
     drawText,
     measureToFit,
