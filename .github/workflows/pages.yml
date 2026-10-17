@@ -1,0 +1,48 @@
+name: pages
+
+# The site is static: Vite builds it, Pages serves it. The workflow exists so the
+# build is the same one the tests run against — `npm run build` is `tsc --noEmit &&
+# vite build`, so a type error fails the deploy rather than shipping.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # A project site lives under /<repo>/; `base` is what tells Vite where that is.
+      - run: npm run build
+        env:
+          PAGES_BASE: /SportFrame/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
