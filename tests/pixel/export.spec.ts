@@ -36,7 +36,7 @@ test.beforeEach(async ({ page }) => {
     await new Promise((res, rej) => {
       img.onload = res
       img.onerror = rej
-      img.src = '/sample/sample.webp'
+      img.src = '/sample/sample_2.jpg'
     })
     ;(window as any).__photo = {
       el: img,
@@ -64,8 +64,8 @@ test('the save button exports at 2x and the ceremony states what was drawn', asy
   await page.goto('/')
   await page.setInputFiles('#file', {
     name: 'sample.webp',
-    mimeType: 'image/webp',
-    buffer: readFileSync(resolve('public/sample/sample.webp')),
+    mimeType: 'image/jpeg',
+    buffer: readFileSync(resolve('public/sample/sample_2.jpg')),
   })
   await expect(page.locator('canvas#cv')).toBeVisible()
 

@@ -13,7 +13,7 @@ import { resolve } from 'node:path'
  * are asserted here against the panel's own DOM.
  */
 
-const SAMPLE = readFileSync(resolve('public/sample/sample.webp'))
+const SAMPLE = readFileSync(resolve('public/sample/sample_2.jpg'))
 const FONT = resolve('tests/fixtures/dejavu-subset.ttf')
 
 const chip = (page: Page, name: string) => page.locator(`.print[aria-label="${name}"]`)
@@ -25,7 +25,7 @@ async function words(page: Page): Promise<void> {
 }
 
 async function load(page: Page): Promise<void> {
-  await page.setInputFiles('#file', { name: 'sample.webp', mimeType: 'image/webp', buffer: SAMPLE })
+  await page.setInputFiles('#file', { name: 'sample.webp', mimeType: 'image/jpeg', buffer: SAMPLE })
   await expect(page.locator('canvas#cv')).toBeVisible()
 }
 

@@ -12,7 +12,7 @@ import { TEMPLATES } from '../../src/core/templates'
  * the chip the user just made.
  */
 
-const SAMPLE = readFileSync(resolve('public/sample/sample.webp'))
+const SAMPLE = readFileSync(resolve('public/sample/sample_2.jpg'))
 
 const chip = (page: Page, name: string) => page.locator(`.print[aria-label="${name}"]`)
 
@@ -39,7 +39,7 @@ async function digest(page: Page): Promise<{ hash: number; w: number; h: number 
 async function loadPhoto(page: Page): Promise<void> {
   await page.setInputFiles('#file', {
     name: 'sample.webp',
-    mimeType: 'image/webp',
+    mimeType: 'image/jpeg',
     buffer: SAMPLE,
   })
   await expect(page.locator('canvas#cv')).toBeVisible()

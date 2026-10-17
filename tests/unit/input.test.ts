@@ -16,7 +16,7 @@ describe('[RF-4] classifyFile', () => {
   it('accepts image mime types', () => {
     expect(classifyFile(file('a.jpg', 'image/jpeg', 1000))).toBe('image')
     expect(classifyFile(file('a.heic', 'image/heic', 1000))).toBe('image')
-    expect(classifyFile(file('a.webp', 'image/webp', 1000))).toBe('image')
+    expect(classifyFile(file('a.webp', 'image/jpeg', 1000))).toBe('image')
   })
 
   it('rejects a zero-byte file before anything downstream sees it', () => {

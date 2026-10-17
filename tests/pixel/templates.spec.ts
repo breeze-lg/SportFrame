@@ -101,7 +101,7 @@ for (const theme of ['light', 'dark'] as const) {
           await new Promise((res, rej) => {
             img.onload = res
             img.onerror = rej
-            img.src = '/sample/sample.webp'
+            img.src = '/sample/sample_2.jpg'
           })
           const photo = {
             el: img,
@@ -424,7 +424,7 @@ test.describe('the preview downscale', () => {
           i.src = src
         })
 
-      const full = await load('/sample/sample.webp')
+      const full = await load('/sample/sample_2.jpg')
       // same dimensions, different pixels: what a downscale looks like to the
       // renderer, which only ever hands it to `drawImage`
       const c = document.createElement('canvas')
@@ -545,7 +545,7 @@ test.describe('mat-anchored text at k = 2', () => {
         await new Promise((res, rej) => {
           img.onload = res
           img.onerror = rej
-          img.src = '/sample/sample.webp'
+          img.src = '/sample/sample_2.jpg'
         })
         const photo = {
           el: img,

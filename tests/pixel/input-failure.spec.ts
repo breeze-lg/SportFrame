@@ -22,7 +22,7 @@ import { resolveSize } from '../../src/core/geometry'
  * drops a bad file on top of it.
  */
 
-const SAMPLE = readFileSync(resolve('public/sample/sample.webp'))
+const SAMPLE = readFileSync(resolve('public/sample/sample_2.jpg'))
 /** the 4:5 canvas the app ships at its default 1440 long edge */
 const DEFAULT = resolveSize('4:5', 1440)
 
@@ -117,7 +117,7 @@ async function digest(page: Page): Promise<Digest> {
 async function loadPoster(page: Page): Promise<void> {
   await page.setInputFiles('#file', {
     name: 'sample.webp',
-    mimeType: 'image/webp',
+    mimeType: 'image/jpeg',
     buffer: SAMPLE,
   })
   await expect(page.locator('canvas#cv')).toBeVisible()

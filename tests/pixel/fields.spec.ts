@@ -14,7 +14,7 @@ import { TEMPLATES } from '../../src/core/templates'
  * the file the user keeps.
  */
 
-const SAMPLE = readFileSync(resolve('public/sample/sample.webp'))
+const SAMPLE = readFileSync(resolve('public/sample/sample_2.jpg'))
 
 const LABEL: Record<string, string> = { title: '主标题', sub: '副标题', sign: '署名' }
 
@@ -34,7 +34,7 @@ async function words(page: Page): Promise<void> {
 async function loadPhoto(page: Page): Promise<void> {
   await page.setInputFiles('#file', {
     name: 'sample.webp',
-    mimeType: 'image/webp',
+    mimeType: 'image/jpeg',
     buffer: SAMPLE,
   })
   await expect(page.locator('canvas#cv')).toBeVisible()

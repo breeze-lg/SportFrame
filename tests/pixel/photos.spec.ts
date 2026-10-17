@@ -14,7 +14,7 @@ import { resolve } from 'node:path'
  * the wall pointing at nothing while there is still something to show.
  */
 
-const SAMPLE = readFileSync(resolve('public/sample/sample.webp'))
+const SAMPLE = readFileSync(resolve('public/sample/sample_2.jpg'))
 /** A Nikon D810 frame with its full tag set — 85 mm, f/15, 1/125, ISO 64 — so
  *  the spec plate has something to print. The pixels are procedural and the
  *  repository owns them; see `tests/fixtures/README.md`. */

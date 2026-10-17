@@ -14,7 +14,7 @@ import { TEMPLATES } from '../../src/core/templates'
  * them, not by reading a label that is not there.
  */
 
-const SAMPLE = readFileSync(resolve('public/sample/sample.webp'))
+const SAMPLE = readFileSync(resolve('public/sample/sample_2.jpg'))
 
 /** A fingerprint of the wall, so "it re-rendered" is a claim about pixels. */
 async function digest(page: Page): Promise<{ hash: number; w: number; h: number }> {
@@ -64,7 +64,7 @@ test('picking a template re-renders the wall through the same spine', async ({ p
   await page.goto('/')
   await page.setInputFiles('#file', {
     name: 'sample.webp',
-    mimeType: 'image/webp',
+    mimeType: 'image/jpeg',
     buffer: SAMPLE,
   })
   await expect(page.locator('canvas#cv')).toBeVisible()
@@ -138,7 +138,7 @@ test('every chip is a preview of its own style, and no two are the same picture'
 
   await page.setInputFiles('#file', {
     name: 'sample.webp',
-    mimeType: 'image/webp',
+    mimeType: 'image/jpeg',
     buffer: SAMPLE,
   })
   await expect(page.locator('canvas#cv')).toBeVisible()

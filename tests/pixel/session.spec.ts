@@ -13,7 +13,7 @@ import { resolve } from 'node:path'
  * behind, and what the app does when the store is refused outright.
  */
 
-const SAMPLE = readFileSync(resolve('public/sample/sample.webp'))
+const SAMPLE = readFileSync(resolve('public/sample/sample_2.jpg'))
 /** A Nikon D810 frame with its full tag set — 85 mm, f/15, 1/125, ISO 64. */
 const CAMERA = readFileSync(resolve('tests/fixtures/with-exif.jpg'))
 const CAMERA_BY_ITSELF = { name: 'camera.jpg', buffer: CAMERA }

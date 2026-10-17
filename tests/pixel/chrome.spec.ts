@@ -14,7 +14,7 @@ import { TEMPLATES } from '../../src/core/templates'
  * through the poster the way the user made it.
  */
 
-const SAMPLE = readFileSync(resolve('public/sample/sample.webp'))
+const SAMPLE = readFileSync(resolve('public/sample/sample_2.jpg'))
 
 const chip = (page: Page, name: string) => page.locator(`.print[aria-label="${name}"]`)
 const tab = (page: Page, label: string) => page.locator('.tab', { hasText: label })
@@ -23,7 +23,7 @@ const mode = (page: Page, label: string) => page.locator('.mode', { hasText: lab
 async function load(page: Page): Promise<void> {
   await page.setInputFiles('#file', {
     name: 'sample.webp',
-    mimeType: 'image/webp',
+    mimeType: 'image/jpeg',
     buffer: SAMPLE,
   })
   await expect(page.locator('canvas#cv')).toBeVisible()

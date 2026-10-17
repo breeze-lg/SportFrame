@@ -16,7 +16,7 @@ import { resolveSize } from '../../src/core/geometry'
  * sliders' own attributes, and localStorage across a reload.
  */
 
-const SAMPLE = readFileSync(resolve('public/sample/sample.webp'))
+const SAMPLE = readFileSync(resolve('public/sample/sample_2.jpg'))
 
 const chip = (page: Page, name: string) => page.locator(`.print[aria-label="${name}"]`)
 const slider = (page: Page, label: string) => page.locator(`#controls input[aria-label="${label}"]`)
@@ -63,7 +63,7 @@ async function push(page: Page, label: string, value: number): Promise<void> {
 async function loadPhoto(page: Page): Promise<void> {
   await page.setInputFiles('#file', {
     name: 'sample.webp',
-    mimeType: 'image/webp',
+    mimeType: 'image/jpeg',
     buffer: SAMPLE,
   })
   await expect(page.locator('canvas#cv')).toBeVisible()

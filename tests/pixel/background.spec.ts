@@ -16,7 +16,7 @@ test('无照片 with a sheet is that sheet; without one the wall is the app slat
     await new Promise((res, rej) => {
       img.onload = res
       img.onerror = rej
-      img.src = '/sample/sample.webp'
+      img.src = '/sample/sample_2.jpg'
     })
     const photo = { el: img, width: img.naturalWidth, height: img.naturalHeight }
     const { drawBackground } = (window as any).__frameCore
@@ -60,7 +60,7 @@ test('darken lowers a blurred background to the ratio it names', async ({ page }
     await new Promise((res, rej) => {
       img.onload = res
       img.onerror = rej
-      img.src = '/sample/sample.webp'
+      img.src = '/sample/sample_2.jpg'
     })
     const photo = { el: img, width: img.naturalWidth, height: img.naturalHeight }
     f.setSize(200, 200)
