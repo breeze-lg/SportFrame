@@ -327,20 +327,34 @@ export const BACKGROUND_MODES: { id: BackgroundMode; label: string }[] = [
  * built-ins authored (28–62) rather than the maximum, which would be a look nobody
  * chose.
  */
-export function setBackgroundMode(t: Template, mode: BackgroundMode, ctx: ControlContext): Template {
-  if (t.background.mode === mode) return t
+/**
+ * The record as if this mode had just been chosen: the mode, a blur to be blurred by
+ * when that is what 带背景 needs, and the offsets zeroed where 无照片 has nowhere to
+ * move the card to.
+ *
+ * Split from `setBackgroundMode` because two callers need it *without* the
+ * already-in-that-mode short circuit: picking a style keeps the wall's mode (`pick`),
+ * and the rack draws each chip that way (`withMode`) — a 样张 chip in 带背景 has to
+ * show a blur, or the chip is a sharp backdrop under a label that says otherwise.
+ */
+export function withBackground(t: Template, mode: BackgroundMode, ctx: ControlContext): Template {
   const background = { ...t.background, mode }
+  // 带背景 needs a blur to be blurred by. The default is the middle of what the
+  // built-ins authored, not the maximum, which would be a look nobody chose.
+  if (mode === 'blur' && !(background.blur ?? 0)) background.blur = 40
   // 无照片 delivers the mount's own box, so the offsets have nowhere to move the
-  // card *to*: a window cannot be off-centre inside itself. Zeroed here rather than
-  // merely ignored, so a record's own numbers never describe a poster that cannot
-  // exist — and so `mountRect`, which reads them, has nothing to crop around. Only
-  // where there is something to zero, though: a record that never carried offsets
-  // keeps the frame it had, which is what stops a round trip out and back from
-  // lighting up 已调整 about a poster that is pixel-for-pixel the one it started as.
+  // card *to*: a window cannot be off-centre inside itself. Zeroed only where there
+  // is something to zero — a record that never carried offsets keeps the frame it
+  // had, which is what stops a round trip out and back from lighting up 已调整 about
+  // a poster that is pixel-for-pixel the one it started as.
   const moved = !!t.frame.ox || !!t.frame.oy
   const frame = mode === 'mount' && moved ? { ...t.frame, ox: 0, oy: 0 } : t.frame
-  if (mode === 'blur' && !(background.blur ?? 0)) background.blur = 40
   return settleTemplate({ ...t, frame, background }, ctx)
+}
+
+export function setBackgroundMode(t: Template, mode: BackgroundMode, ctx: ControlContext): Template {
+  if (t.background.mode === mode) return t
+  return withBackground(t, mode, ctx)
 }
 
 /**

@@ -49,6 +49,7 @@ import {
   setMatBlur,
   settleTemplate,
   syncControls,
+  withBackground,
   type BackgroundMode,
   type ControlContext,
   type ControlId,
@@ -262,6 +263,21 @@ function persistSession(): void {
  * reason: they are both readings of the mount that is on, and every one of them
  * moves when it moves.
  */
+/**
+ * A style, drawn in the mode the wall is in.
+ *
+ * 背景 is not a property of a style — it is what the poster *is* — so a chip has to
+ * show its style in the mode you are working in: while you are making 无照片 posters,
+ * a rack of blurred backdrops is a row of pictures of posters you cannot make from
+ * here. `pick` keeps the mode for the same reason, which is what stops the preview
+ * from being a picture of something the chip will not do.
+ */
+function withMode(t: Template): Template {
+  const mode = state.template?.background.mode
+  if (!mode || mode === t.background.mode) return t
+  return withBackground(t, mode, controlContext(t))
+}
+
 function paintRail(activeId: string | null): void {
   const saved = savedTemplates()
   const customIds = new Set(saved.map((t) => t.id))
@@ -280,7 +296,7 @@ function paintRail(activeId: string | null): void {
     pick,
     customIds,
     removeSaved,
-    (t) => styleThumb(t, activePhoto(state), state.longEdge),
+    (t) => styleThumb(withMode(t), activePhoto(state), state.longEdge),
   )
   renderTabs(tabsEl, tabs, state.tab, onTab)
 
@@ -653,6 +669,10 @@ function paintModeBar(): void {
     mode: onBackgroundMode,
     fill: onMatBlur,
   })
+  // The rack draws each style in the mode you are in (`withMode`), so a mode change
+  // is a change to every chip as well — and this is the one place every record
+  // repaint passes through.
+  paintRail(state.template?.id ?? null)
 }
 
 /**
@@ -799,8 +819,15 @@ function pick(id: string): void {
   // built-ins answer first and the saved list answers for the rest — the same
   // merge `paintRail` draws, so a chip on the rail is never a chip that
   // resolves to nothing.
-  const t = getTemplate(id) ?? savedTemplates().find((x) => x.id === id)
-  if (!t) return
+  const t0 = getTemplate(id) ?? savedTemplates().find((x) => x.id === id)
+  if (!t0) return
+  // 背景 is the wall's question, not the style's. A user stepping through the rack
+  // while in 无照片 is looking for a style that works without a backdrop, and a pick
+  // that quietly put a blur back behind the mount would be the chip's own preview
+  // lying about what it does — the chips are drawn in the mode you are in
+  // (`withMode`), so the pick keeps it.
+  const mode = state.template?.background.mode
+  const t = mode && mode !== t0.background.mode ? withBackground(t0, mode, controlContext(t0)) : t0
   rememberStep(`pick:${id}`)
   state.template = t
   paintRail(id)

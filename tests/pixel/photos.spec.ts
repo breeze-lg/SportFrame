@@ -125,6 +125,10 @@ test('the camera plate reads the photograph that is on', async ({ page }) => {
     { name: 'camera.jpg', buffer: CAMERA },
   ])
   await page.locator('.print[aria-label="样张"]').click()
+  // 样张's own mode is 无照片 — a white sheet and nothing behind it — and the wall's
+  // mode is sticky across picks, so the mode this test's band arithmetic assumes is
+  // chosen here rather than inherited from whatever the app booted in.
+  await page.locator('#modebar .mode-thumb[data-mode="mount"]').click()
   await expect(page.locator('canvas#cv')).toBeVisible()
 
   /**

@@ -188,9 +188,17 @@ test('the 背景 choice is two posters, drawn under the poster', async ({ page }
 
   // The panel keeps the numbers and has no 背景 row of its own any more.
   expect(await page.locator('#controls .rail-h b').allTextContents()).toEqual(['画面'])
+  // The rack draws the styles in the mode you are in, and a pick keeps it — so the
+  // chip is not a picture of something it will not do.
+  const chipArt = (name: string) =>
+    page.locator(`.print[aria-label="${name}"]`).evaluate((el) => (el as HTMLElement).style.backgroundImage)
+  const blurredChip = await chipArt('经典')
   await thumbs.nth(1).click()
   expect(await page.locator('#modebar .mode-thumb.on')).toHaveText('无照片')
   expect(await page.locator('#rail-info')).toContainText('拍立得 · 769×1058')
+  expect(await chipArt('经典'), 'the rack kept drawing a backdrop in 无照片').not.toBe(blurredChip)
+  await page.locator('.print[aria-label="拍立得"]').click()
+  expect(await page.locator('#modebar .mode-thumb.on')).toHaveText('无照片')
 })
 
 test('无照片 delivers the mount’s own box: the poster is the card', async ({ page }) => {
@@ -378,7 +386,10 @@ test('样张 keeps its white sheet: 无照片 there is a card, and the card is t
   await chip(page, '样张').click()
   // 样张 ships as 无照片 — the poster is the card — and *with* a sheet, because its
   // plate is printed on it. That colour is authored, not a control: a camera plate
-  // over a punched-out background is a caption floating in the void.
+  // over a punched-out background is a caption floating in the void. The mode is the
+  // wall's, though, so a pick keeps the one you are in: this test chooses 无照片
+  // explicitly, which is also the mode the template ships with.
+  await page.locator('#modebar .mode-thumb[data-mode="mount"]').click()
   expect(await page.locator('#modebar .mode-thumb.on')).toHaveText('无照片')
   expect(await corner(page)).toEqual([255, 255, 255])
   expect((await saved(page)).template.background.color).toBe('#FFFFFF')
@@ -399,15 +410,16 @@ test('带背景 on 样张 is a blur, not a label on a flat card', async ({ page 
   await page.goto('/')
   await loadPhoto(page)
   await chip(page, '样张').click()
-  expect(await page.locator('#modebar .mode-thumb.on')).toHaveText('无照片')
-
-  await page.locator('#modebar .mode-thumb[data-mode="blur"]').click()
-  // Three rows appear, one of them the blur the card did not have — a 带背景 that
-  // drew a sharp backdrop under its own label would be a control lying.
+  // 样张 authors no blur, and picking it while the wall is in 带背景 keeps the mode —
+  // so the backdrop it gets is the invented one, not a sharp backdrop under a label
+  // that says 虚化.
+  expect(await page.locator('#modebar .mode-thumb.on')).toHaveText('带背景')
   expect(await page.locator('#controls .ctl-name').allTextContents()).toEqual([...FRAME, ...BACKDROP])
   expect((await saved(page)).template.background.blur).toBeGreaterThan(0)
   // ...and the authored sheet is still there underneath, for the trip back.
   expect((await saved(page)).template.background.color).toBe('#FFFFFF')
+  await page.locator('#modebar .mode-thumb[data-mode="mount"]').click()
+  expect(await page.locator('#modebar .mode-thumb.on')).toHaveText('无照片')
 })
 
 test('the panel is exactly the controls the current template offers', async ({ page }) => {
@@ -415,6 +427,10 @@ test('the panel is exactly the controls the current template offers', async ({ p
 
   for (const t of TEMPLATES) {
     await chip(page, t.name).click()
+    // The wall's mode is sticky across picks, so each template's own mode is set
+    // here explicitly — otherwise 样张 would be judged in whatever mode the previous
+    // chip left behind.
+    await page.locator(`#modebar .mode-thumb[data-mode="${t.background.mode}"]`).click()
     // 后景 only where there is one, and the mount's own numbers only in 无照片:
     // 样张 ships as 无照片, so its panel is the card's three numbers and no 后景
     // rows — a slider that accepts a drag and changes nothing is the failure 文字
@@ -583,13 +599,18 @@ test('the sliders are rebuilt for the template that is on, not carried over', as
   // window the file does not contain — and a panel still holding 经典's 70px mat
   // would be a panel describing the wrong mount.
   await chip(page, '样张').click()
+  await page.locator('#modebar .mode-thumb[data-mode="mount"]').click()
   expect(await page.locator('#controls .ctl-name').allTextContents()).toEqual(MOUNT)
   await expect(readout(page, 'radius')).toHaveText('无')
   await expect(readout(page, 'mat')).toHaveText('86px')
   await expect(readout(page, 'matBottom')).toHaveText('150px')
-  await expect(page.locator('#record-acts')).toHaveAttribute('data-adjusted', 'false')
+  // 已调整 is up, and honestly so: picking a style keeps the wall's mode, so this
+  // 样张 really does differ from the one the template authored.
+  await expect(page.locator('#record-acts')).toHaveAttribute('data-adjusted', 'true')
 
-  // 留白 carries no mat at all, and no 后景 of its own kind to lose.
+  // 留白 carries no mat at all, and no 后景 of its own kind to lose. 后景 exists only
+  // in 带背景, and the wall's mode is sticky across picks, so it is set here first.
+  await page.locator('#modebar .mode-thumb[data-mode="blur"]').click()
   await chip(page, '留白').click()
   await expect(readout(page, 'mat')).toHaveText('0px')
   await expect(readout(page, 'zoom')).toHaveText('126%')
