@@ -61,7 +61,10 @@ const discs = new WeakMap<Photo, string | null>()
 
 /**
  * The photograph, blurred, as a square bitmap for 模糊's disc. 96 device pixels is
- * the disc's own box at 2×; the CSS clips it round, so the square never shows.
+ * the disc's own box at 2×; the CSS clips it into a circle, and this deliberately
+ * does *not*: a circle drawn inside a circle leaves the outer sliver of the bitmap
+ * transparent, which the disc's own paper shows through as a rim where the border
+ * should be. One clip, in the one place that knows the disc's shape.
  */
 export function blurDisc(photo: Photo): string | null {
   const known = discs.get(photo)
@@ -76,12 +79,7 @@ export function blurDisc(photo: Photo): string | null {
     if (ctx) {
       const src = photo.preview ?? photo.el
       const source = { el: src, width: photo.width, height: photo.height }
-      ctx.save()
-      ctx.beginPath()
-      ctx.arc(box / 2, box / 2, box / 2, 0, Math.PI * 2)
-      ctx.clip()
       drawBlurredPhoto(ctx, { x: 0, y: 0, w: box, h: box }, source, box * 0.12, 1.1, box * 0.5)
-      ctx.restore()
       url = c.toDataURL('image/png')
     }
   } catch {

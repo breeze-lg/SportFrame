@@ -78,6 +78,12 @@ body.ceremony-open .topbar { opacity: 0; pointer-events: none; visibility: hidde
 .app {
   display: grid;
   grid-template-columns: 224px minmax(0, 1fr) 340px;
+  /* One row, and a *definite* one: with `height: 100dvh` and an auto row the row
+     grew to its content, so anything that made the middle column taller than the
+     screen — the rack under the wall, a bar under the poster — pushed the poster up
+     out of the viewport instead of shortening it. `minmax(0, 1fr)` pins the row to
+     the screen and lets each column's own `min-height: 0` do the rest. */
+  grid-template-rows: minmax(0, 1fr);
   height: 100vh;
   height: 100dvh;
 }
@@ -120,13 +126,15 @@ body.ceremony-open .topbar { opacity: 0; pointer-events: none; visibility: hidde
 }
 canvas#cv {
   max-width: 92%;
-  /* The poster is measured against what is left once the bar has its room: 170px is
-     that bar at its tallest — two 68px previews with their labels, the gap between
-     the pane's two rows, and 白边's discs out (which only 无照片 does). `flex: none`
-     because a canvas that flex shrinks is a *squashed* poster, not a smaller one —
-     and reserving the *open* height rather than the closed one is what keeps the
-     discs from being clipped on a phone, where the pane has no room to give. */
-  max-height: calc(100% - 170px);
+  /* The poster is measured against what is left once the chrome has its room: the
+     bar under it (~160px at its tallest), the caption, and the rack. A percentage
+     here does not work — the pane is a flex item, and a percentage `max-height`
+     against it is treated as `none`, which is how the poster first ended up taller
+     than the screen and clipped at the top. `dvh` is definite, so this is the cap
+     that actually holds, in both a window and a phone's collapsing chrome.
+     `flex: none` because a canvas that *flex* shrinks is a squashed poster, not a
+     smaller one. */
+  max-height: calc(100dvh - 430px);
   flex: none;
   box-shadow: var(--deep);
   border-radius: 2px;
@@ -260,7 +268,18 @@ canvas#cv:not([width]) { visibility: hidden; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.rail { display: flex; gap: 9px; overflow-x: auto; padding-bottom: 2px; }
+/* Centred, and scrolling when it cannot be: `safe center` is the one value that does
+   both — a rail that fits sits in the middle of the wall, and a rail that does not
+   starts at its own left edge instead of having the first chips clipped off the top.
+   The plain `center` above it is the fallback for an engine without `safe`. */
+.rail {
+  display: flex;
+  gap: 9px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  justify-content: center;
+  justify-content: safe center;
+}
 
 /* 文字 — one field per slot the current template prints. The block sets its own
    `display`, so it needs its own `[hidden]` rule for the same reason
@@ -360,7 +379,11 @@ canvas#cv:not([width]) { visibility: hidden; }
   height: 62px;
   border: 1px solid var(--bevel);
   border-radius: 2px;
-  background-color: var(--surface);
+  /* The device grey rather than the surface white: a 无照片 poster is a *white card*
+     on nothing, and white on white is a chip that reads as empty — 样张's preview
+     vanished into its own box on a light wall. `--device` is the app's own paper
+     grey, so the card reads as a card in both themes. */
+  background-color: var(--device);
   /* The print inside the mount: a render of this style's own poster, already
      the chip's aspect, set inline by `renderRail` (see `styleThumb`). `100%
      100%` rather than `cover` — the bitmap *is* the poster, so there is nothing
@@ -504,13 +527,19 @@ canvas#cv:not([width]) { visibility: hidden; }
   gap: 10px;
   margin-top: 14px;
 }
-.mode-row { display: flex; align-items: flex-end; gap: 16px; }
+/* Both rows are centred, and each preview is a *cell* rather than a picture sized by
+   its own bitmap. The two are deliberately different sizes — 无照片 is a smaller
+   poster — and a row of two unequal pictures does not read as centred even when its
+   box is. Equal cells with the pictures centred inside them is what makes the pair
+   look placed. */
+.mode-row { display: flex; align-items: flex-end; justify-content: center; gap: 10px; }
 .mode-thumb {
   appearance: none;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
+  width: 68px;
   padding: 0;
   border: 0;
   background: none;
@@ -519,13 +548,12 @@ canvas#cv:not([width]) { visibility: hidden; }
   font-size: 11px;
   cursor: pointer;
 }
-/* The box is fixed; the bitmap inside it is not. Both thumbs are rendered at the
-   chip's own resolution and both are capped at the same box, so 无照片's smaller
-   delivery reads as a smaller picture — which is the honest answer to "what am I
-   about to write?". */
+/* The cell is fixed; the bitmap inside it is not, and that is the point: both are
+   rendered at the size the file will be written at, so 无照片's smaller delivery
+   reads as a smaller picture — the honest answer to "what am I about to write?". */
 .mode-thumb img {
   display: block;
-  max-width: 54px;
+  max-width: 60px;
   max-height: 68px;
   border-radius: 2px;
   box-shadow: 0 1px 2px rgba(28, 27, 24, .12), 0 10px 22px -10px rgba(28, 27, 24, .35);
@@ -537,31 +565,34 @@ canvas#cv:not([width]) { visibility: hidden; }
 .mode-thumb.on img { opacity: 1; box-shadow: 0 0 0 1px var(--ink), 0 10px 22px -10px rgba(28, 27, 24, .4); }
 .mode-thumb:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 
-/* The discs — 白边's two surfaces — are *revealed*, not toggled: the row animates
-   open when 无照片 is chosen and closed when it is left. It is the one animated
-   thing in this app, and it earns the exception by answering the question the
-   mode just raised: with no background behind the mount, what is the border?
+/* The discs — 白边's two surfaces — are *revealed in place*: the row keeps its own
+   height whether they are out or not, so choosing 无照片 never moves the poster.
+   That is not tidiness. A poster that jumps when a control appears is a poster you
+   have to find again, and the two rows around it had nothing to do with the choice.
 
-   `max-height` rather than `display`, because a transition needs two states of the
-   same box; `overflow: hidden` so the closed row is genuinely out of the way;
-   `visibility` at the end of the transition so a hidden disc is not in the tab
-   order. Nothing here is rebuilt on the way in — see `syncModeBar` — because an
-   element created with the transition's end state has nothing to animate from. */
+   So only opacity, the lift and `visibility` animate; the layout does not. The
+   reveal is the discs coming *up* into the room that was always theirs, which is
+   also why the pane reserves the open height (see `canvas#cv`).
+
+   `visibility` rather than `display` — and delayed to the end of the transition —
+   so a closed row is out of the tab order without giving up its space. Nothing here
+   is rebuilt on the way in (see `syncModeBar`): an element created with the
+   transition's end state has nothing to animate from. */
 .disc-row {
   display: flex;
   align-items: flex-start;
+  justify-content: center;
   gap: 16px;
-  max-height: 0;
   opacity: 0;
-  overflow: hidden;
   visibility: hidden;
-  transition: max-height .3s ease, opacity .22s ease, visibility 0s linear .3s;
+  transform: translateY(-5px);
+  transition: opacity .2s ease, transform .26s ease, visibility 0s linear .26s;
 }
 .disc-row[data-out='true'] {
-  max-height: 84px;
   opacity: 1;
   visibility: visible;
-  transition: max-height .3s ease, opacity .26s ease .06s, visibility 0s;
+  transform: none;
+  transition: opacity .26s ease .05s, transform .3s cubic-bezier(.2, .7, .2, 1), visibility 0s;
 }
 @media (prefers-reduced-motion: reduce) {
   .disc-row, .disc-row[data-out='true'] { transition: none; }
@@ -583,11 +614,13 @@ canvas#cv:not([width]) { visibility: hidden; }
 }
 /* The circle itself. White paper with a hairline for 白边, the photograph blurred
    for 模糊 — the two materials the border can be, shown as the only thing that can
-   show them. `--mat` rather than `#FFF`: the mount's own white, in both themes. */
+   show them. `--mat` rather than `#FFF`: the mount's own white, in both themes.
+   `cover` on a square bitmap (see `blurDisc`, which no longer clips its own circle):
+   one clip, in the one place that knows the disc's shape. */
 .disc-art {
   display: block;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background-color: var(--mat);
   background-position: center;
@@ -598,6 +631,41 @@ canvas#cv:not([width]) { visibility: hidden; }
 .disc.on .disc-art { box-shadow: inset 0 0 0 1px var(--bevel-mat), 0 0 0 2px var(--ink); }
 .disc:disabled { opacity: .38; cursor: default; }
 .disc:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+
+/* 明暗 — the wall's own switch, at the top-right of the preview (`#theme-btn`,
+   wired in `main.ts`). The wall is the whole picture and this is the one control
+   that changes all of it at once, so it sits on the wall's corner and not in a
+   panel: it is not a property of the poster, the poster is the same poster in
+   either theme, and nothing about it is saved with a template. The glyph is the
+   *destination* — a moon while the wall is light — and it turns over as it goes. */
+.theme-btn {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 2;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--bevel);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--quiet);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--lift);
+  transition: color .2s ease, border-color .2s ease;
+}
+.theme-btn:hover { color: var(--ink); border-color: var(--ink); }
+.theme-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.theme-glyph { display: block; transition: transform .45s cubic-bezier(.2, .7, .2, 1); }
+.theme-btn[data-theme='dark'] .theme-glyph { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) {
+  .theme-glyph { transition: none; }
+}
 
 /* ---------------------------------------------------------------------------
    The chrome the reference editor gave this app: a bar across the top on a
@@ -877,6 +945,16 @@ canvas#cv:not([width]) { visibility: hidden; }
     z-index: 30;
     background: rgba(0, 0, 0, .35);
   }
+
+  /* The phone's chrome is a different stack: the topbar over it, and the bar under
+     the poster plus the caption and the rack-and-panel below. Same rule as the desk —
+     `dvh`, because a percentage here is ignored — with the phone's own, larger
+     reserve, and the bar itself one size down so the poster keeps the pixels. */
+  canvas#cv { max-height: calc(100dvh - 600px); }
+  .mode-thumb { width: 60px; }
+  .mode-thumb img { max-width: 48px; max-height: 56px; }
+  .modebar { gap: 8px; margin-top: 10px; }
+  .disc-art { width: 38px; height: 38px; }
 
   /* the bare wall's own way in */
   .wall-empty:not([hidden]) { display: flex; flex-direction: column; align-items: center; gap: 12px; }

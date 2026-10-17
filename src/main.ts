@@ -5,7 +5,7 @@ import { drawMat, roundedRect } from './core/mat'
 import { drawBackground, outputRect } from './core/background'
 import { drawText, measureToFit, frameFont, blockTop, textSpan, baseSize } from './core/text'
 import { drawPlate, plateFields, plateLines, PLATE_WEIGHTS } from './core/plate'
-import { initTheme } from './ui/theme'
+import { initTheme, setTheme } from './ui/theme'
 import { createState } from './ui/state'
 import { toast } from './ui/toast'
 import { renderRail, styleThumb } from './ui/rail'
@@ -613,6 +613,31 @@ function paintFields(): void {
 const controlBox = document.getElementById('controls') as HTMLElement
 const controlHost = document.getElementById('control-row') as HTMLElement
 const modeBarHost = document.getElementById('modebar') as HTMLElement
+const themeBtn = document.getElementById('theme-btn') as HTMLButtonElement
+
+/**
+ * 明暗, at the top-right of the preview.
+ *
+ * The record and the poster are the same in either theme — `--mat` is the same white
+ * and every colour a render paints is a literal or a template field — so this is not
+ * a control over the poster at all. It is the wall, and it is why it is drawn on the
+ * wall rather than in the panel: nothing here is saved with a template, and the
+ * glyph says which way the switch goes rather than which way it is.
+ */
+function paintTheme(): void {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark'
+  const glyph = themeBtn.querySelector('.theme-glyph')
+  if (glyph) glyph.textContent = dark ? '☀' : '☾'
+  themeBtn.setAttribute('aria-label', dark ? '切到亮色' : '切到暗色')
+  themeBtn.title = dark ? '切到亮色' : '切到暗色'
+  themeBtn.dataset.theme = dark ? 'dark' : 'light'
+}
+
+themeBtn.addEventListener('click', () => {
+  setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark')
+  paintTheme()
+})
+paintTheme()
 
 /**
  * The bar under the poster: 带背景 / 无照片 as previews of this photograph, and — in

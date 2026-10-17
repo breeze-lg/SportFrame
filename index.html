@@ -107,6 +107,14 @@
 
     <div class="wall" id="wall">
       <div class="wall-pane">
+        <!-- 明暗, at the top-right of the preview: the wall is the whole picture, and
+             this is the one control that changes all of it at once. It lives here
+             rather than in a panel because it is not a property of the poster — the
+             poster is the same poster in both themes, and `--mat` is the same white
+             (see `src/ui/theme.ts`). -->
+        <button class="theme-btn" id="theme-btn" type="button" aria-label="切到亮色">
+          <span class="theme-glyph" aria-hidden="true">☾</span>
+        </button>
         <canvas id="cv"></canvas>
         <!-- The bare wall, with the one thing a new visitor needs on it. On a
              desk the drop zone is a column away and visible; on a phone the
