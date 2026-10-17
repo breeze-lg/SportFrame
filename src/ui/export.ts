@@ -1,3 +1,5 @@
+import { aspectOf } from '../core/geometry'
+import { outputRect } from '../core/background'
 import { render } from '../core/render'
 import type { Exif, Photo, Size, Template, TextSlotId } from '../core/types'
 
@@ -67,6 +69,23 @@ export function stamp(d: Date): string {
   ].join('-')
 }
 
+/**
+ * The size the file will actually be, for a template and a photograph: the whole
+ * canvas, or the mount's own box in 无照片 — the 800×800 a 1000×1000 poster crops
+ * down to.
+ *
+ * Deliberately the one place a *size* is derived from a record, and everything that
+ * budgets, draws or reports one asks it: the screen canvas in `main.ts`, this
+ * module's ladder, and the size printed under the poster. A budget computed against
+ * a canvas the file is not going to be is a budget that refuses a 4× export that
+ * would have fit.
+ */
+export function deliverySize(size: Size, template: Template, photo: Photo | null): Size {
+  const aspect = photo ? aspectOf(template.canvas.ratio, photo) : 0
+  const r = outputRect(size, template, aspect)
+  return { W: Math.max(1, Math.round(r.w)), H: Math.max(1, Math.round(r.h)) }
+}
+
 export function renderToCanvas(
   size: Size,
   k: number,
@@ -76,8 +95,9 @@ export function renderToCanvas(
   exif: Exif | null,
 ): HTMLCanvasElement {
   const out = document.createElement('canvas')
-  out.width = size.W * k
-  out.height = size.H * k
+  const delivery = deliverySize(size, template, photos[0] ?? null)
+  out.width = delivery.W * k
+  out.height = delivery.H * k
   const ctx = out.getContext('2d')
   if (!ctx) throw new Error('导出失败：无法创建画布')
   // strip `preview` so the export always draws from the full-resolution image
@@ -154,7 +174,7 @@ export async function exportPng(
   opts: ExportOpts,
 ): Promise<{ blob: Blob; filename: string; k: number; downgraded: boolean }> {
   const want = opts.want ?? 2
-  const rungs = rungsFor(opts.size, want)
+  const rungs = rungsFor(deliverySize(opts.size, opts.template, opts.photos[0] ?? null), want)
   const ladder = rungs.length > 0 ? rungs : [1]
 
   const draw = (scale: number) =>

@@ -12,7 +12,7 @@ import { TEMPLATES } from '../../src/core/templates'
  * the chip the user just made.
  */
 
-const SAMPLE = readFileSync(resolve('public/sample/sample.webp'))
+const SAMPLE = readFileSync(resolve('public/sample/sample_2.jpg'))
 
 const chip = (page: Page, name: string) => page.locator(`.print[aria-label="${name}"]`)
 
@@ -39,7 +39,7 @@ async function digest(page: Page): Promise<{ hash: number; w: number; h: number 
 async function loadPhoto(page: Page): Promise<void> {
   await page.setInputFiles('#file', {
     name: 'sample.webp',
-    mimeType: 'image/webp',
+    mimeType: 'image/jpeg',
     buffer: SAMPLE,
   })
   await expect(page.locator('canvas#cv')).toBeVisible()
@@ -166,15 +166,39 @@ async function decode(page: Page, png: Buffer): Promise<number[][][]> {
  * own 1px borders.
  */
 function markDelta(a: number[][][], b: number[][][], from?: number) {
-  const start = from ?? Math.max(0, Math.min(a.length, b.length) - 10)
+  // The two chips must be *the same chip* for a pixel difference to mean
+  // anything, and every caller compares a saved copy against the template it was
+  // copied from: same template, same shape, same picture. That is a real
+  // precondition now rather than an accident of the CSS, because a chip's box
+  // follows its canvas ratio (`styleThumb`) — comparing across two styles would
+  // be comparing two different sizes, and the offset below would compare the
+  // wrong pixels.
+  //
+  // A single pixel of slack: `element.screenshot()` clips to the element's box
+  // rounded *outward*, and the rail centres its chips, so two chips of identical
+  // width can sit on a fractional x and be rasterised a pixel apart. The comparison
+  // below runs over the overlap, and the mark it is looking for is a 42px
+  // hairline inset 3px from either edge — nowhere near the pixel this drops.
+  expect(
+    Math.abs(a.length - b.length),
+    'the two chips are different heights — compare a copy against the template it came from',
+  ).toBeLessThanOrEqual(2)
+  expect(
+    Math.abs(a[0]!.length - b[0]!.length),
+    'the two chips are different widths — compare a copy against the template it came from',
+  ).toBeLessThanOrEqual(2)
+
+  const height = Math.min(a.length, b.length)
+  const width = Math.min(a[0]!.length, b[0]!.length)
+  const start = from ?? Math.max(0, height - 10)
   const rows: number[] = []
   let delta = 0
   let n = 0
   let lumA = 0
   let lumB = 0
-  for (let y = start; y < a.length; y++) {
+  for (let y = start; y < height; y++) {
     let hit = false
-    for (let x = 0; x < a[y]!.length; x++) {
+    for (let x = 0; x < width; x++) {
       const mine = a[y]![x]!
       const theirs = b[y]![x]!
       const d = Math.max(
@@ -192,7 +216,7 @@ function markDelta(a: number[][][], b: number[][][], from?: number) {
     }
     if (hit) rows.push(y)
   }
-  return { height: a.length, rows, delta, n, lumA: n ? lumA / n : 0, lumB: n ? lumB / n : 0 }
+  return { height, rows, delta, n, lumA: n ? lumA / n : 0, lumB: n ? lumB / n : 0 }
 }
 
 /**
@@ -208,10 +232,21 @@ function markDelta(a: number[][][], b: number[][][], from?: number) {
  */
 test('the mark on a saved chip survives being the selected chip', async ({ page }) => {
   await page.goto('/')
+
+  // 拍立得 and not the boot template: the pair below has to be two chips of the
+  // same *shape* for a pixel difference to be about the mark, and a saved copy
+  // is only ever the same shape as the template it was copied from. 拍立得 is
+  // also not the premium one.
+  await chip(page, '拍立得').click()
   await saveAs(page, '我的模板')
+  // ...and then off it again, because the first half of this test is about the
+  // mark on an *unselected* chip: 拍立得 was selected to be copied, so both chips
+  // would otherwise wear `.on`'s ring and the ring — an ink line, where the mark
+  // is the bevel grey — would be what the pixels below are measuring.
+  await chip(page, '经典').click()
 
   const saved = chip(page, '我的模板')
-  const builtIn = chip(page, '竖版故事') // off, and not the premium one
+  const builtIn = chip(page, '拍立得')
 
   // First, where the mark is: the chip's bottom strip, which is where the mark
   // is claimed to live. This used to run from row 0, on the claim that the mark
@@ -263,9 +298,16 @@ test('the rail carries the mark in dark theme too', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
 
+  await chip(page, '拍立得').click()
   await saveAs(page, '夜里的模板')
+  // off again, for the reason the light-theme test above gives: the ring and the
+  // mark are different lines in different greys
+  await chip(page, '经典').click()
+
   const saved = chip(page, '夜里的模板')
-  const builtIn = chip(page, '竖版故事')
+  // the copy's own parent, as in the selection test above: two chips of one
+  // shape, so the only difference the pixels can carry is the mark
+  const builtIn = chip(page, '拍立得')
 
   // the bottom strip, as in the selection test above and for the same reason:
   // the × a saved chip wears is a difference in the chip's top-right, and this

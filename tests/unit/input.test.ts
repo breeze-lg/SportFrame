@@ -4,6 +4,7 @@ import {
   decodePhoto,
   needsDownscale,
   previewScale,
+  releasePhoto,
   wireInput,
 } from '../../src/ui/input'
 import type { Photo } from '../../src/core/types'
@@ -15,7 +16,7 @@ describe('[RF-4] classifyFile', () => {
   it('accepts image mime types', () => {
     expect(classifyFile(file('a.jpg', 'image/jpeg', 1000))).toBe('image')
     expect(classifyFile(file('a.heic', 'image/heic', 1000))).toBe('image')
-    expect(classifyFile(file('a.webp', 'image/webp', 1000))).toBe('image')
+    expect(classifyFile(file('a.webp', 'image/jpeg', 1000))).toBe('image')
   })
 
   it('rejects a zero-byte file before anything downstream sees it', () => {
@@ -97,9 +98,52 @@ function stubImage(width: number, height: number, log: string[] = []): void {
     onerror: (() => void) | null = null
     naturalWidth = width
     naturalHeight = height
-    set src(_url: string) {
+    // A real `HTMLImageElement` reflects the URL it was given, and everything
+    // downstream of a decode reads it back — the thumbnail caches key on it, and
+    // `releasePhoto` checks it is a blob URL before revoking. A stub with only a
+    // setter would let those read `undefined` and pass for the wrong reason.
+    protected url = ''
+    get src(): string {
+      return this.url
+    }
+    set src(url: string) {
+      this.url = url
       queueMicrotask(() => {
         log.push('load')
+        this.onload?.()
+      })
+    }
+  }
+  vi.stubGlobal('Image', StubImage)
+}
+
+/**
+ * An `Image` stub whose decodes settle one per script entry: dimensions to
+ * succeed with, or `null` for a decode the browser refuses. Needed by the batch
+ * tests, where "one bad file must not discard the good ones beside it" is only
+ * observable if the batch is not uniformly good or uniformly bad.
+ */
+function stubImageSeq(script: (readonly [number, number] | null)[]): void {
+  let i = 0
+  class StubImage {
+    onload: (() => void) | null = null
+    onerror: (() => void) | null = null
+    naturalWidth = 0
+    naturalHeight = 0
+    protected url = ''
+    get src(): string {
+      return this.url
+    }
+    set src(url: string) {
+      this.url = url
+      const step = script[i++] ?? null
+      queueMicrotask(() => {
+        if (!step) {
+          this.onerror?.()
+          return
+        }
+        this.naturalWidth = step[0]
+        this.naturalHeight = step[1]
         this.onload?.()
       })
     }
@@ -201,19 +245,19 @@ describe('[RF-4] wireInput reports what actually failed', () => {
     // `vi.fn()` alone types as a zero-argument mock and every read off `.calls`
     // is then a compile error
     const onError = vi.fn((_msg: string) => {})
-    const onPhoto = vi.fn((_photo: Photo): void => {
+    const onPhotos = vi.fn((_photos: Photo[]): void => {
       throw new Error('drawImage: the image is in the broken state')
     })
 
-    wireInput(drop.el, file.el, onPhoto, onError, () => null)
+    wireInput(drop.el, file.el, onPhotos, onError, () => null)
     file.fire('change', {
       target: { files: [realFile('a.jpg', 'image/jpeg', 16)], value: '' },
     })
     await settle()
 
     // the photo decoded and reached the renderer...
-    expect(onPhoto).toHaveBeenCalledTimes(1)
-    expect(onPhoto.mock.calls[0]![0]).toMatchObject({ width: 1200, height: 800 })
+    expect(onPhotos).toHaveBeenCalledTimes(1)
+    expect(onPhotos.mock.calls[0]![0][0]).toMatchObject({ width: 1200, height: 800 })
     // ...and the renderer's own failure was reported as one. The message names
     // the renderer and carries its detail; what it must never say is that the
     // file could not be read, which is a different fault with a different fix.
@@ -232,16 +276,71 @@ describe('[RF-4] wireInput reports what actually failed', () => {
     const drop = fakeDrop()
     const file = fakeFileInput()
     const onError = vi.fn((_msg: string) => {})
-    const onPhoto = vi.fn((_photo: Photo) => {})
+    const onPhotos = vi.fn((_photos: Photo[]) => {})
 
-    wireInput(drop.el, file.el, onPhoto, onError, () => null)
+    wireInput(drop.el, file.el, onPhotos, onError, () => null)
     file.fire('change', {
       target: { files: [realFile('a.jpg', 'image/jpeg', 16)], value: '' },
     })
     await settle()
 
-    expect(onPhoto).not.toHaveBeenCalled()
+    expect(onPhotos).not.toHaveBeenCalled()
     expect(onError).toHaveBeenCalledWith('图片读取失败')
+  })
+
+  it('keeps the good files of a batch and names the one that failed', async () => {
+    // A folder dragged in where one entry is not an image: the other two still
+    // load, and the message says which file it was about. With several files in
+    // flight, "这不是图片文件" on its own leaves the user hunting for which one.
+    vi.stubGlobal('document', { addEventListener: () => {} })
+    stubImageSeq([
+      [1200, 800],
+      [640, 1074],
+    ])
+
+    const drop = fakeDrop()
+    const file = fakeFileInput()
+    const onError = vi.fn((_msg: string) => {})
+    const onPhotos = vi.fn((_photos: Photo[]) => {})
+
+    wireInput(drop.el, file.el, onPhotos, onError, () => null)
+    file.fire('change', {
+      target: {
+        files: [
+          realFile('a.jpg', 'image/jpeg', 16),
+          realFile('b.pdf', 'application/pdf', 16),
+          realFile('c.jpg', 'image/jpeg', 16),
+        ],
+        value: '',
+      },
+    })
+    await settle()
+
+    expect(onPhotos).toHaveBeenCalledTimes(1)
+    expect(onPhotos.mock.calls[0]![0].map((p) => p.name)).toEqual(['a', 'c'])
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError.mock.calls[0]![0]).toContain('b.pdf')
+    expect(onError.mock.calls[0]![0]).toContain('这不是图片文件')
+  })
+
+  it('keeps the terse message when a lone file fails', async () => {
+    vi.stubGlobal('document', { addEventListener: () => {} })
+    stubImage(1200, 800)
+
+    const drop = fakeDrop()
+    const file = fakeFileInput()
+    const onError = vi.fn((_msg: string) => {})
+    const onPhotos = vi.fn((_photos: Photo[]) => {})
+
+    wireInput(drop.el, file.el, onPhotos, onError, () => null)
+    file.fire('change', {
+      target: { files: [realFile('b.pdf', 'application/pdf', 16)], value: '' },
+    })
+    await settle()
+
+    expect(onPhotos).not.toHaveBeenCalled()
+    // no file name: there is only one file it could have been about
+    expect(onError).toHaveBeenCalledWith('这不是图片文件')
   })
 })
 
@@ -282,19 +381,39 @@ describe('decodePhoto result', () => {
     expect(photo.el.naturalWidth).toBe(1200)
   })
 
-  it('revokes the previous photo\'s URL when a new photo replaces it', async () => {
-    // One live URL at a time: the leak the prototype had (never revoking, so a
-    // session grew without bound) stays fixed.
-    const { created, revoked } = trackUrls('replace')
+  it('keeps every URL alive until the list releases it, and then releases only that one', async () => {
+    // This rule used to be "one live URL at a time": each decode revoked the
+    // one before it, which was right while a session held a single photograph.
+    // The list holds every photograph the user loaded, and the export draws
+    // from `el` long after the decode settles — so a decode that revoked its
+    // predecessor would break a photograph that is still on screen. Lifetime is
+    // the list's, and `releasePhoto` is how the list gives one up.
+    const { created, revoked } = trackUrls('list')
     stubImage(1200, 800)
-    await decodePhoto(realFile('a.jpg', 'image/jpeg', 16), () => null)
+    const a = await decodePhoto(realFile('a.jpg', 'image/jpeg', 16), () => null)
     stubImage(1200, 800)
-    await decodePhoto(realFile('b.jpg', 'image/jpeg', 16), () => null)
+    const b = await decodePhoto(realFile('b.jpg', 'image/jpeg', 16), () => null)
 
-    expect(created).toEqual(['blob:replace-1', 'blob:replace-2'])
-    expect(revoked).toContain('blob:replace-1')
-    // ...and the URL the current photo still needs is untouched
-    expect(revoked).not.toContain('blob:replace-2')
+    expect(created).toEqual(['blob:list-1', 'blob:list-2'])
+    expect(revoked).toEqual([])
+
+    releasePhoto(a)
+    expect(revoked).toEqual(['blob:list-1'])
+    // ...and the photograph that is still listed keeps the URL it draws from
+    expect(b.el.src).toBe('blob:list-2')
+    expect(revoked).not.toContain('blob:list-2')
+  })
+
+  it('revokes nothing for a photograph that never had a blob URL', async () => {
+    // The demo photograph is a `data:` URL and allocated no object URL at all,
+    // so a list that drops it must not hand `revokeObjectURL` a string that is
+    // not an object URL.
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const img = { src: 'data:image/png;base64,iVBORw0KGgo=' } as HTMLImageElement
+
+    releasePhoto({ el: img, width: 1400, height: 1050, name: 'demo', exif: null })
+
+    expect(revoke).not.toHaveBeenCalled()
   })
 
   it('releases a failed load\'s URL immediately — nothing draws from it', async () => {

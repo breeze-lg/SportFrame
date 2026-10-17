@@ -1,19 +1,76 @@
 import { render } from './core/render'
-import { resolveSize, matRect } from './core/geometry'
+import { resolveSize, matRect, aspectOf, fitRect } from './core/geometry'
 import { TEMPLATES, getTemplate } from './core/templates'
-import { drawMat, roundedRect } from './core/mat'
-import { drawBackground } from './core/background'
-import { drawText, measureToFit, frameFont } from './core/text'
-import { drawPlate, plateFields } from './core/plate'
-import { initTheme } from './ui/theme'
+import { drawMat, drawBevel, roundedRect } from './core/mat'
+import { drawBackground, outputRect } from './core/background'
+import { drawText, measureToFit, frameFont, blockTop, textSpan, baseSize } from './core/text'
+import { drawPlate, plateFields, plateLines, PLATE_WEIGHTS } from './core/plate'
+import { initTheme, setTheme } from './ui/theme'
 import { createState } from './ui/state'
 import { toast } from './ui/toast'
-import { renderRail, chipThumb } from './ui/rail'
-import { renderFields } from './ui/fields'
+import { renderRail, styleThumb } from './ui/rail'
+import { filterRail, renderTabs, tabsFor, type TabId } from './ui/tabs'
+import { modeFor, renderModes, type Mode } from './ui/modes'
+import {
+  canRedo,
+  canUndo,
+  newHistory,
+  redo,
+  remember,
+  undo,
+  type Draft,
+} from './ui/history'
+import {
+  DEFAULT_FAMILY,
+  renderFields,
+  syncFields,
+  wordsPanel,
+  type FontOption,
+  type TypeContext,
+} from './ui/fields'
+import { addFontFile, ensureFont, fontOptions, forgetFont, isLoaded } from './ui/fonts'
+import { frameRect, settleText, sizeCeiling, textOffsetBounds } from './core/limits'
+import { FONT_CHOICES, MONO_STACK, SYSTEM_STACK, stackOf } from './core/fonts'
+import {
+  activePhoto,
+  addPhotos,
+  forgetThumb,
+  removePhoto,
+  renderPhotoList,
+  selectPhoto,
+  type PhotoList,
+} from './ui/photos'
+import {
+  controlSpecs,
+  matFillPanel,
+  renderControls,
+  setBackgroundMode,
+  setControl,
+  setMatBlur,
+  settleTemplate,
+  syncControls,
+  withBackground,
+  type BackgroundMode,
+  type ControlContext,
+  type ControlId,
+} from './ui/controls'
+import { modeBar, renderModeBar, syncMatDiscs, syncModeBar } from './ui/modebar'
 import { plaqueText } from './ui/plaque'
 import { loadCustom, saveCustom, browserStorage, sessionStore } from './ui/custom'
-import type { Size, Template, TextSlotId } from './core/types'
-import { wireInput } from './ui/input'
+import type { Photo, Size, Template, TextAnchor, TextConfig, TextSlotId } from './core/types'
+import { releasePhoto, wireInput } from './ui/input'
+import {
+  MAX_PHOTOS,
+  dropBytes,
+  forgetKey,
+  loadSession,
+  putBytes,
+  restorePhotos,
+  restoredActive,
+  saveSession,
+  sessionOf,
+  type StoredPhoto,
+} from './ui/session'
 import { readExif } from './core/exif'
 import { isUnlocked, canExport } from './entitlements'
 import {
@@ -23,6 +80,7 @@ import {
   showCeremony,
   blobToDataUrl,
   renderToCanvas,
+  deliverySize,
   fitsCanvas,
   stamp,
 } from './ui/export'
@@ -30,6 +88,24 @@ import './styles/tokens.css'
 import './styles/app.css'
 
 initTheme()
+
+/**
+ * `?demo=1` — the app's own front door (see the foot of this module), and a
+ * sandbox: it reads nothing and it writes nothing.
+ *
+ * The demo photograph is generated, so it is not the user's work, and a visit
+ * to this URL must not touch what is. It used to be persisted like any other
+ * photograph — which meant a reload of `?demo=1` restored the demo it had stored
+ * and then added a second one, and its list grew by one every time the page was
+ * refreshed. It also meant a demo visit wrote a generated photograph into a real
+ * session, where the user had to remove it by hand.
+ *
+ * The rule is therefore one flag, enforced in the two places that would
+ * otherwise write: `persistSession` and `keepPhotos`. Reading is skipped too, so
+ * a reload of this URL is always the same one-photograph demo — which is what
+ * its other callers want: a screenshot, a first look, a reviewer's click.
+ */
+const demoMode = new URLSearchParams(location.search).get('demo') === '1'
 
 const state = createState({ template: TEMPLATES[0] ?? null })
 const cv = document.getElementById('cv') as HTMLCanvasElement
@@ -42,12 +118,30 @@ const ctx = cv.getContext('2d')
  * rather than a second opinion about it.
  */
 function canvasSize(template: Template): Size {
-  const photo = state.photo
+  const photo = activePhoto(state)
   return resolveSize(
     template.canvas.ratio,
     state.longEdge,
     photo ? { width: photo.width, height: photo.height } : undefined,
   )
+}
+
+/**
+ * The bare wall — the state the app boots in, and the state it returns to when
+ * the last photograph is removed.
+ *
+ * `canvas#cv:not([width])` is what draws that state (`app.css`), so the sizing
+ * has to be *un*-assigned here, not merely left alone: a canvas that kept its
+ * `width` attribute would keep the last poster visible above an empty list,
+ * which is a poster of a photograph the user just deleted. The surface is
+ * cleared with it, so nothing survives in the pixels either.
+ */
+function blankWall(): void {
+  if (!ctx) return
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.clearRect(0, 0, cv.width, cv.height)
+  cv.removeAttribute('width')
+  cv.removeAttribute('height')
 }
 
 /**
@@ -58,11 +152,14 @@ function canvasSize(template: Template): Size {
  */
 function draw(): void {
   const template = state.template
-  const photo = state.photo
-  // No photo, no poster: the default state is a bare wall (the shell's
-  // `canvas#cv:not([width])` guard hides the undrawn canvas), and sizing it
-  // here would hang a poster-sized rectangle of background on that empty wall.
-  if (!ctx || !template || !photo) return
+  const photo = activePhoto(state)
+  // No photo, no poster: the default state is a bare wall, and `blankWall` is
+  // what puts it back. Sizing the canvas here instead would hang a poster-sized
+  // rectangle of background on that empty wall.
+  if (!ctx || !template || !photo) {
+    blankWall()
+    return
+  }
 
   const size = canvasSize(template)
   state.size = size
@@ -70,8 +167,13 @@ function draw(): void {
   // `width` attribute, which is what releases the guard above and reveals the
   // canvas. A `style.width` here would leave it hidden with the poster already
   // drawn inside it.
-  cv.width = size.W
-  cv.height = size.H
+  //
+  // The *delivery* size, not the canvas: in 无照片 the poster is the mount's own
+  // box, so the preview is that box — what you see is what the file is. `render`
+  // is still handed `size`, and translates the window onto the card itself.
+  const delivery = deliverySize(size, template, photo)
+  cv.width = delivery.W
+  cv.height = delivery.H
 
   render({
     ctx,
@@ -80,7 +182,8 @@ function draw(): void {
     template,
     photos: [photo],
     text: state.text,
-    exif: state.exif,
+    // the plate reads the photograph's own EXIF — see `activePhoto`
+    exif: photo.exif,
   })
 }
 
@@ -108,6 +211,36 @@ function savedTemplates(): Template[] {
 }
 
 /**
+ * Where the session record lives: the browser's own store, or nowhere.
+ *
+ * Deliberately not `saveStore()`: that one degrades to an in-memory `Storage`,
+ * which is the right answer for a template the user just saved — it is real for
+ * as long as this tab lives — and the wrong one for a record whose whole job is
+ * to outlive a reload. A record that cannot be read back after a refresh is a
+ * record that should not be written.
+ */
+const recordStore = browserStorage()
+
+/**
+ * Writes the session record: the photographs, which one is on the wall, the
+ * mount, the words, the numbers.
+ *
+ * Called at the end of every mutation that changes it — a photograph added,
+ * removed or selected, a mount picked, a slider moved, a word typed — because
+ * there is no cheaper moment to be wrong at: a refresh is a keystroke away, and
+ * a record that lags by one edit is a record that restores the wrong poster. It
+ * is a few hundred bytes of JSON into `localStorage`, so the price is a
+ * synchronous write that no user can perceive, and the alternative — a
+ * debounce — is a window in which the app forgets something the user just did.
+ *
+ * Silent in demo mode: see `demoMode`.
+ */
+function persistSession(): void {
+  if (demoMode) return
+  saveSession(recordStore, sessionOf(state))
+}
+
+/**
  * The rail's list: the built-ins first and in their authored order — they are
  * the product's own recommendation, and what a first-time visitor is choosing
  * between — then the user's saved templates, appended. A template you made is
@@ -118,33 +251,136 @@ function savedTemplates(): Template[] {
  * handler call, which is what makes a just-saved template appear without a
  * reload.
  *
- * The chips are prints — the user's own photograph, cropped to the chip (see
- * `chipThumb`) — and the header beside 样式 names the mount that is on and the
- * file it will produce. Both are painted here rather than at each call site
- * because both go stale at exactly the same moments: a new photograph, a new
- * pick, a save, a delete. A rail that showed the picture of the frame before
- * last is the same defect as a chip that says nothing.
+ * The chips are the styles themselves — a render of the poster each one makes
+ * of the photograph on the wall (see `styleThumb`) — and the header beside 样式
+ * names the mount that is on and the file it will produce. Both are painted
+ * here rather than at each call site because both go stale at exactly the same
+ * moments: a new photograph, a new pick, a save, a delete. A rail that showed
+ * the style before last, or the photograph before last, is the same defect as a
+ * chip that says nothing.
+ *
+ * The plate's own line and the poster's caption are painted here for the same
+ * reason: they are both readings of the mount that is on, and every one of them
+ * moves when it moves.
  */
+/**
+ * A style, drawn in the mode the wall is in.
+ *
+ * 背景 is not a property of a style — it is what the poster *is* — so a chip has to
+ * show its style in the mode you are working in: while you are making 无照片 posters,
+ * a rack of blurred backdrops is a row of pictures of posters you cannot make from
+ * here. `pick` keeps the mode for the same reason, which is what stops the preview
+ * from being a picture of something the chip will not do.
+ */
+function withMode(t: Template): Template {
+  const mode = state.template?.background.mode
+  if (!mode || mode === t.background.mode) return t
+  return withBackground(t, mode, controlContext(t))
+}
+
 function paintRail(activeId: string | null): void {
   const saved = savedTemplates()
+  const customIds = new Set(saved.map((t) => t.id))
+  const all = [...TEMPLATES, ...saved]
+
+  // A tab can empty itself: 我的 disappears with the last saved template, and a
+  // selection left pointing at it would be a rack with nothing on it and no
+  // word about why. 全部 is the answer that always has something in it.
+  const tabs = tabsFor(saved.length)
+  if (!tabs.includes(state.tab)) state.tab = 'all'
+
   renderRail(
     rail,
-    [...TEMPLATES, ...saved],
+    filterRail(all, state.tab, customIds),
     activeId,
     pick,
-    new Set(saved.map((t) => t.id)),
+    customIds,
     removeSaved,
-    chipThumb(state.photo),
+    (t) => styleThumb(withMode(t), activePhoto(state), state.longEdge),
   )
+  renderTabs(tabsEl, tabs, state.tab, onTab)
+
+  const t = state.template
+  paintInfo()
+  // The caption under the poster: which mount is on, and the line the template
+  // carries saying what it does to a photograph. A style with no tagline — a
+  // copy saved before the field existed, or one of the user's own — says its
+  // name and stops, rather than borrowing a sentence from something else.
+  capName.textContent = t?.name ?? ''
+  capTag.textContent = t?.tagline ?? ''
+  posterCap.hidden = !t
+}
+
+/**
+ * The line beside the rack: which mount is on, and the size of the poster it makes.
+ *
+ * The size is the *delivery* size — the canvas for every mode but 无照片, which
+ * delivers the mount's own box — so it is repainted whenever the mode changes, and
+ * not only when the rail does. A readout still saying 1152×1440 beside a card
+ * cropped to 769×1058 would be the app describing a file it is not about to write.
+ */
+function paintInfo(): void {
   const info = document.getElementById('rail-info')
-  if (info) {
-    const t = state.template
-    // The poster's own size, not the file's: `state.size` is the 1× canvas and
-    // the export doubles it, so a readout in export pixels would state a number
-    // that appears nowhere on screen.
-    const size = t ? canvasSize(t) : null
-    info.textContent = t && size ? `${t.name} · ${size.W}×${size.H}` : ''
+  if (!info) return
+  const t = state.template
+  const size = t ? deliverySize(canvasSize(t), t, activePhoto(state)) : null
+  info.textContent = t && size ? `${t.name} · ${size.W}×${size.H}` : ''
+}
+
+/** The collections row. A tab changes what the rack shows and nothing else:
+ *  the wall, the words and the numbers are all still the same poster. */
+function onTab(tab: TabId): void {
+  if (tab === state.tab) return
+  state.tab = tab
+  paintRail(state.template?.id ?? null)
+}
+
+/**
+ * 文字 / 画面 — one panel at a time (see `src/ui/modes.ts`).
+ *
+ * `canWords` is the same test `fields.ts` makes before it builds a row, and it
+ * is asked here rather than passed in so the two cannot disagree: a 文字 mode
+ * offered for 留白 would open a panel with nothing in it.
+ */
+function canWords(): boolean {
+  return (state.template?.text?.slots?.length ?? 0) > 0
+}
+
+function paintPanels(): void {
+  state.mode = modeFor(state.mode, canWords())
+  panels.dataset.mode = state.mode
+  // The phone's sheet, opened and closed by the modes row. On a desk the
+  // attribute is written and ignored: there is room for the panel in the
+  // column, and a panel that had to be summoned would be a step backwards.
+  document.body.dataset.panel = panelOpen ? 'open' : 'closed'
+}
+
+function paintModes(): void {
+  const words = canWords()
+  renderModes(modesEl, modeFor(state.mode, words), words, onMode)
+  paintPanels()
+}
+
+/** A mode button: opens its panel, or closes the sheet if it is the one already
+ *  open. On a desk the second press is a no-op a user cannot observe. */
+function onMode(mode: Mode): void {
+  if (mode === state.mode && panelOpen) {
+    panelOpen = false
+    paintPanels()
+    return
   }
+  openMode(mode)
+}
+
+/**
+ * Opens a panel by name — what a mode button does, and what picking the mount
+ * already on the wall does (the chip's knob). Both are the same promise: the
+ * numbers for *this* mount, one press away.
+ */
+function openMode(mode: Mode): void {
+  state.mode = mode
+  panelOpen = true
+  paintModes()
 }
 
 /**
@@ -158,28 +394,454 @@ function paintRail(activeId: string | null): void {
 const fieldBox = document.getElementById('fields') as HTMLElement
 const fieldRow = document.getElementById('field-row') as HTMLElement
 
+/**
+ * The faces the picker offers: the presets, then whatever the user has loaded.
+ * Cached, because the panel is rebuilt on every pick and `fontOptions` reads the
+ * store — and refreshed on the two events that change the answer, which are
+ * loading a font and removing one.
+ */
+let families: FontOption[] = []
+
+/** What the 文字 panel's ceilings are measured against: the canvas, the
+ *  photograph's box inside it, and the depth of the band under it. The same three
+ *  things `render` lays the words out with, so a slider's maximum is a claim about
+ *  the poster on screen. */
+function typeContext(t: Template): TypeContext {
+  const photo = activePhoto(state)
+  const size = canvasSize(t)
+  const aspect = aspectOf(
+    t.canvas.ratio,
+    photo ? { width: photo.width, height: photo.height } : undefined,
+  )
+  return { size, frame: frameRect(size, aspect, t.frame.scale), matBottom: t.frame.matBottom }
+}
+
 function onText(id: TextSlotId, value: string): void {
+  // The keystroke that changes nothing is the one on the caret moving, and a
+  // step for it would be a press of 撤销 that appears to do nothing.
+  if (state.text[id] === value) return
+  rememberStep(`text:${id}`)
   state.text[id] = value
+  draw()
+  // The words are the user's own work and the one thing on this screen that
+  // cannot be rebuilt from anything else on it.
+  persistSession()
+}
+
+/**
+ * A typography write — one slot's size, one slot's face, the block's anchor, one
+ * of its offsets. They are the same three steps as a 画面 slider, because they
+ * write the same record: settle against the layout, repaint what reads the
+ * record, redraw.
+ *
+ * `syncFields` rather than `paintFields` on the way out: a slider rebuilt under
+ * the pointer loses the drag, so the DOM stays and only its bounds and readouts
+ * move — the same reason `syncControls` exists next door.
+ */
+function editText(key: string, patch: (config: TextConfig) => TextConfig): void {
+  const t = state.template
+  if (!t?.text) return
+  const ctx = typeContext(t)
+  const settled = settleText(ctx.size, patch(t.text), ctx.frame, ctx.matBottom)
+  // The reference comparison is what tells "the user moved something" from "the
+  // app re-derived the same record" — and the 已调整 marker rides on that answer.
+  if (settled === t.text) return
+  const record: Template = { ...t, text: settled }
+  rememberStep(key)
+  state.template = record
+  syncFields(fieldRow, wordsPanel(settled, state.text, ctx, families))
+  paintAdjusted(record)
+  draw()
+  persistSession()
+}
+
+function onSlotSize(index: number, size: number): void {
+  editText(`text-size:${index}`, (config) => ({
+    ...config,
+    slots: config.slots.map((s, i) => (i === index ? { ...s, size } : s)),
+  }))
+}
+
+function onSlotFamily(index: number, family: string): void {
+  const id = family === DEFAULT_FAMILY ? undefined : family
+  editText(`text-font:${index}`, (config) => ({
+    ...config,
+    slots: config.slots.map((s, i) => (i === index ? { ...s, family: id } : s)),
+  }))
+  // A face that is in the record but not in the document draws as the fallback
+  // until it is registered — which is the redraw this waits for.
+  void resolveFonts()
+}
+
+function onAnchor(anchor: TextAnchor): void {
+  editText('text-anchor', (config) => ({ ...config, anchor }))
+}
+
+function onOffset(axis: 'dx' | 'dy', value: number): void {
+  editText(`text-${axis}`, (config) => ({ ...config, [axis]: value }))
+}
+
+/**
+ * The ＋ on a slot's row: take a font file, register it, keep it, and set *that
+ * slot* to it. Which slot the button belongs to is the whole reason it is on the
+ * row rather than in a settings page — "load a handwriting face for this line" is
+ * the request this answers.
+ */
+let fontTarget: number | null = null
+const fontFile = document.getElementById('font-file') as HTMLInputElement
+
+fontFile.addEventListener('change', () => {
+  const file = fontFile.files?.[0]
+  // Cleared before the work, so picking the same file twice fires twice: a
+  // second attempt at a file that failed the first time is a real thing to do.
+  fontFile.value = ''
+  const index = fontTarget
+  fontTarget = null
+  if (!file || index === null) return
+  void (async () => {
+    const loaded = await addFontFile(file)
+    if (!loaded.ok) {
+      toast(loaded.error)
+      return
+    }
+    families = await fontOptions()
+    // A full repaint and not `syncFields`: the picker has to *gain* the option
+    // before the value can be set to it, and an option added to a `<select>` that
+    // is already in the DOM is the one thing the sync pass does not do.
+    paintFields()
+    onSlotFamily(index, loaded.id)
+    toast(`字体已载入：${loaded.name}`)
+  })()
+})
+
+/** Removes a loaded font from the store. A record still naming it keeps drawing
+ *  it for this session — the face is in `document.fonts` and has no delete — and
+ *  the picker marks it 未加载, which is the honest state of a poster whose face is
+ *  about to be gone after a reload. */
+async function onForgetFont(family: string): Promise<void> {
+  const name = family.replace(/^user:/, '')
+  await forgetFont(name)
+  families = await fontOptions()
+  paintFields()
+  toast(`已移除字体：${name}`)
+}
+
+/**
+ * Registers the faces the current record names, and redraws if any of them
+ * arrived — including the app's own.
+ *
+ * Two very different reasons a poster can be drawn in the wrong face, and both
+ * end here:
+ *
+ * 1. **The app's own faces.** They are woff2 files with `font-display: swap`, and
+ *    a canvas never asks the browser for a face: it draws with whatever is in
+ *    `document.fonts` at that instant. So a poster drawn before the browser has
+ *    fetched `IBM Plex Mono` comes out in the fallback — and *stays* there,
+ *    because the `loadingdone` event belongs to the DOM's own request, not to a
+ *    canvas's silence. `document.fonts.load` is the request the canvas cannot
+ *    make. A session restored off the record is exactly this case: it is drawn a
+ *    moment after boot, off bytes it just read, and an export taken straight
+ *    after a refresh would have kept the fallback type.
+ * 2. **The user's own faces.** A record can name a `user:` family this session
+ *    has not registered — a font loaded in an earlier visit, read back from the
+ *    store — and until the face is up the canvas is drawing the app's stack.
+ */
+async function resolveFonts(): Promise<void> {
+  let arrived = false
+
+  for (const face of posterFaces()) {
+    if (document.fonts.check(face)) continue
+    try {
+      await document.fonts.load(face)
+    } catch {
+      // An unavailable family is not an error: every stack ends in one this app
+      // can draw, and the browser falls through on its own.
+    }
+    arrived = true
+  }
+
+  const wanted = new Set(
+    (state.template?.text?.slots ?? [])
+      .map((s) => s.family)
+      .filter((f): f is string => !!f && !isLoaded(f)),
+  )
+  for (const family of wanted) {
+    if (await ensureFont(family)) arrived = true
+  }
+
+  if (!arrived) return
+  paintFields()
   draw()
 }
 
+/**
+ * Every face the poster in hand can put on the wall: the plate's two weights, and
+ * one per text slot, in each slot's own weight and family. The size in the string
+ * is a formality — `fonts.load` resolves a face, not a measurement — so it is 16
+ * for all of them.
+ */
+function posterFaces(): string[] {
+  // the plate's two weights, then each text slot's own weight and family
+  const faces = PLATE_WEIGHTS.map((w) => `${w} 16px ${MONO_STACK}`)
+  for (const slot of state.template?.text?.slots ?? []) {
+    faces.push(`${slot.weight} 16px ${slot.family ? stackOf(slot.family) : SYSTEM_STACK}`)
+  }
+  return [...new Set(faces)]
+}
+
 function paintFields(): void {
-  const drawn = renderFields(fieldRow, state.template?.text, state.text, onText)
+  const t = state.template
+  if (!t?.text) {
+    // A template with no typography declares no slots, and there is no panel to
+    // draw — but the row still has to be *cleared*: it is holding the last
+    // template's blocks, and an input left behind is a control that takes typing
+    // and writes it to a poster that does not print it.
+    fieldRow.textContent = ''
+    fieldBox.hidden = true
+    return
+  }
+  const drawn = renderFields(
+    fieldRow,
+    wordsPanel(t.text, state.text, typeContext(t), families),
+    {
+      onInput: onText,
+      onSize: onSlotSize,
+      onFamily: onSlotFamily,
+      onAnchor,
+      onOffset,
+      onLoadFont: (index) => {
+        fontTarget = index
+        fontFile.click()
+      },
+      onForgetFont: (family) => void onForgetFont(family),
+    },
+  )
   fieldBox.hidden = drawn === 0
 }
 
+/**
+ * 画面 — the sliders for the mount's own geometry (see `src/ui/controls.ts`).
+ *
+ * Same shape as 文字 next door, and for the same reason: the rows are built
+ * where the *template* changes and never from `draw`, which runs per slider
+ * tick. A range input rebuilt under a moving pointer loses the drag.
+ */
+const controlBox = document.getElementById('controls') as HTMLElement
+const controlHost = document.getElementById('control-row') as HTMLElement
+const modeBarHost = document.getElementById('modebar') as HTMLElement
+const themeBtn = document.getElementById('theme-btn') as HTMLButtonElement
+
+/**
+ * 明暗, at the top-right of the preview.
+ *
+ * The record and the poster are the same in either theme — `--mat` is the same white
+ * and every colour a render paints is a literal or a template field — so this is not
+ * a control over the poster at all. It is the wall, and it is why it is drawn on the
+ * wall rather than in the panel: nothing here is saved with a template, and the
+ * glyph says which way the switch goes rather than which way it is.
+ */
+function paintTheme(): void {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark'
+  const glyph = themeBtn.querySelector('.theme-glyph')
+  if (glyph) glyph.textContent = dark ? '☀' : '☾'
+  themeBtn.setAttribute('aria-label', dark ? '切到亮色' : '切到暗色')
+  themeBtn.title = dark ? '切到亮色' : '切到暗色'
+  themeBtn.dataset.theme = dark ? 'dark' : 'light'
+}
+
+themeBtn.addEventListener('click', () => {
+  setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark')
+  paintTheme()
+})
+paintTheme()
+
+/**
+ * The bar under the poster: 带背景 / 无照片 as previews of this photograph, and — in
+ * 无照片 — the two discs the border can be made of.
+ *
+ * Repainted from the two things it is a picture *of*: the record and the photograph.
+ * `renderModeBar` builds it once and `syncModeBar` updates it, and that split is the
+ * whole reason the discs can animate at all — a rebuilt element has nothing to
+ * transition from.
+ */
+function paintModeBar(): void {
+  renderModeBar(modeBarHost, modeBar(state.template!, activePhoto(state), state.longEdge), {
+    mode: onBackgroundMode,
+    fill: onMatBlur,
+  })
+  // The rack draws each style in the mode you are in (`withMode`), so a mode change
+  // is a change to every chip as well — and this is the one place every record
+  // repaint passes through.
+  paintRail(state.template?.id ?? null)
+}
+
+/**
+ * What the panel measures its ceilings against: the canvas the wall is drawn
+ * at, and the aspect `render` will lay the photograph out with. Both come from
+ * the same functions the renderer uses, so a slider's maximum is a claim about
+ * the poster on screen rather than a second opinion about it.
+ */
+function controlContext(t: Template): ControlContext {
+  const photo = activePhoto(state)
+  return {
+    size: canvasSize(t),
+    aspect: aspectOf(t.canvas.ratio, photo ? { width: photo.width, height: photo.height } : undefined),
+  }
+}
+
+/**
+ * The two blocks of a record that decide what the poster looks like — the ones
+ * the 画面 panel writes — plus the words' typography, which the 文字 panel writes
+ * into the same record. Compared as JSON because they are plain data, and a
+ * field-by-field comparison would be a second list of the fields to keep in step
+ * with the first.
+ */
+function geometryOf(t: Template): string {
+  return JSON.stringify([t.frame, t.background, t.text])
+}
+
+/**
+ * 已调整 — the wall is showing something the rail would not hand you.
+ *
+ * The comparison is against the record the rail *resolves* for this id: the
+ * built-in for a built-in, the stored record for a saved template. That is the
+ * honest reading of "edited and not saved". The attribute goes on the *panels*
+ * and not on 画面, because what it warns about is the whole record — the mount's
+ * numbers and the words' type — and the note and 重置 above both panels read it
+ * from there (see `app.css`).
+ */
+/** The record's own marker: `#record-acts[data-adjusted]` is what shows 已调整 and
+ *  what enables 重置, and the CSS reads it from that one attribute. */
+function paintAdjusted(t: Template): void {
+  const source = getTemplate(t.id) ?? savedTemplates().find((s) => s.id === t.id)
+  // Nothing to compare against means nothing was overridden: a record with no
+  // source in the rail is a record this app did not derive from one.
+  const adjusted = !!source && geometryOf(source) !== geometryOf(t)
+  recordActs.dataset.adjusted = adjusted ? 'true' : 'false'
+  // 重置 is live exactly when the note is visible, and the note is visible
+  // exactly when there is something to go back from.
+  mountReset.disabled = !adjusted
+}
+
+function paintControls(): void {
+  const t = state.template
+  controlBox.hidden = !t
+  if (!t) return
+  // Both the numbers and the bar under the poster are functions of this record, and
+  // the bar is also a picture of the photograph — see `paintModeBar`.
+  paintModeBar()
+  renderControls(controlHost, controlSpecs(t, controlContext(t)), onControl)
+  paintAdjusted(t)
+}
+
+/**
+ * 白边 in white, or in the photograph itself.
+ *
+ * A record write like the mode next door, and for the same reason it rebuilds the
+ * panel rather than syncing it: the row's own `on` state is part of what changed,
+ * and a click cannot be partway through a drag.
+ */
+function onMatBlur(on: boolean): void {
+  const t = state.template
+  if (!t) return
+  const next = setMatBlur(t, on, controlContext(t))
+  if (next === t) return
+  rememberStep('mat-blur')
+  state.template = next
+  paintControls()
+  draw()
+  persistSession()
+}
+
+/**
+ * 虚化 / 无照片 — is the photograph itself in the background, or not. The write is
+ * `setBackgroundMode`'s, and everything after it is bookkeeping, exactly as in
+ * `onControl` next door … with one difference: the rows have to be *rebuilt*
+ * rather than synced, because the mode is what decides whether the three 后景
+ * numbers exist. A rebuild during a drag would lose the pointer, and a click
+ * cannot be partway through one — which is why the choice can afford it and the
+ * sliders cannot.
+ */
+function onBackgroundMode(mode: BackgroundMode): void {
+  const t = state.template
+  if (!t) return
+  const next = setBackgroundMode(t, mode, controlContext(t))
+  if (next === t) return
+  rememberStep('background')
+  state.template = next
+  paintControls()
+  // The delivery size moved with the mode, so the line beside the rack has to move
+  // with it — that readout is the size of the file.
+  paintInfo()
+  draw()
+  persistSession()
+}
+
+/**
+ * One slider moved. The write is `setControl`'s — clamped against the layout,
+ * and settled against what it disturbed — and everything after it is
+ * bookkeeping: the sibling sliders get the new ceilings, the marker gets the
+ * new answer, and the wall is redrawn from the one record that changed.
+ *
+ * `setControl` returning the record it was handed is a drag that landed on the
+ * value already there, and that redraws nothing.
+ */
+function onControl(id: ControlId, raw: number): void {
+  const t = state.template
+  if (!t) return
+  const next = setControl(t, id, raw, controlContext(t))
+  // Before the step, not after: a drag that landed on the value already there
+  // changes nothing and must not leave an 撤销 press behind it.
+  if (next === t) return
+  rememberStep(`frame:${id}`)
+  state.template = next
+  syncControls(controlHost, controlSpecs(next, controlContext(next)))
+  // ...and the one thing outside the panel that a slider can turn live: whether the
+  // mount has a border for 白边's discs to fill. Synced, never rebuilt — this runs on
+  // every tick of a drag.
+  syncMatDiscs(modeBarHost, matFillPanel(next).enabled)
+  paintAdjusted(next)
+  draw()
+  persistSession()
+}
+
 function pick(id: string): void {
+  // The chip that is on is the way into its own numbers — the gesture the knob
+  // drawn in the middle of it promises — rather than the no-op it would
+  // otherwise be, and rather than the reset it used to be: throwing away edits
+  // behind a second click on the same chip is not something a user can find on
+  // purpose, so the reset now has a button in the panel it resets (重置).
+  if (id === state.template?.id) {
+    openMode('frame')
+    return
+  }
   // Both lists. A saved template cannot collide with a built-in id, so the
   // built-ins answer first and the saved list answers for the rest — the same
   // merge `paintRail` draws, so a chip on the rail is never a chip that
   // resolves to nothing.
-  const t = getTemplate(id) ?? savedTemplates().find((x) => x.id === id)
-  if (!t) return
+  const t0 = getTemplate(id) ?? savedTemplates().find((x) => x.id === id)
+  if (!t0) return
+  // 背景 is the wall's question, not the style's. A user stepping through the rack
+  // while in 无照片 is looking for a style that works without a backdrop, and a pick
+  // that quietly put a blur back behind the mount would be the chip's own preview
+  // lying about what it does — the chips are drawn in the mode you are in
+  // (`withMode`), so the pick keeps it.
+  const mode = state.template?.background.mode
+  const t = mode && mode !== t0.background.mode ? withBackground(t0, mode, controlContext(t0)) : t0
+  rememberStep(`pick:${id}`)
   state.template = t
   paintRail(id)
   paintPlaque(t)
   paintFields()
+  // The mount's own numbers, not the ones the last mount was given: a pick is
+  // how a user gets back to the template as authored.
+  paintControls()
+  paintModes()
   draw()
+  // A pick (or an undo) can land on a record that names a face this session has
+  // not registered yet: see `resolveFonts`.
+  void resolveFonts()
+  persistSession()
 }
 
 /**
@@ -198,30 +860,336 @@ function paintPlaque(t: Template): void {
   plaque.textContent = line
 }
 
+/**
+ * 照片 — the left column: the list, and the model's rules applied to the app's
+ * state (see `src/ui/photos.ts` for the rules themselves).
+ *
+ * The four functions here are the whole of how a photograph arrives, leaves and
+ * becomes the one on the wall. Every one of them ends in `photoChanged`, which
+ * is what keeps the poster, the rack of styles and the 画面 ceilings describing
+ * the same file: the chips are renders of the *active* photograph, and a saved
+ * `orig` template sizes its canvas from the file, so a switch or a removal
+ * moves all of them or none.
+ */
+const photoBox = document.getElementById('photo-list') as HTMLElement
+const photoCount = document.getElementById('photo-count') as HTMLElement
+const photosN = document.getElementById('photos-n') as HTMLElement
+
+function photoList(): PhotoList {
+  return { photos: state.photos, active: state.active }
+}
+
+function useList(next: PhotoList): void {
+  state.photos = next.photos
+  state.active = next.active
+}
+
+function paintPhotos(): void {
+  renderPhotoList(photoBox, photoList(), onSelectPhoto, onRemovePhoto)
+  photoCount.textContent =
+    state.photos.length === 0 ? '' : `${state.active + 1} / ${state.photos.length}`
+  // The same count in the phone's top bar, because there the column is behind a
+  // button and the button has to say whether there is anything behind it.
+  photosN.textContent = state.photos.length === 0 ? '' : ` ${state.photos.length}`
+  // The bare wall's own way in, which only matters on a phone (see `app.css`):
+  // on a desk the drop zone is a column away and in sight.
+  wallEmpty.hidden = state.photos.length > 0
+}
+
+function photoChanged(): void {
+  paintPhotos()
+  paintRail(state.template?.id ?? null)
+  paintControls()
+  draw()
+  // Every path that changes the list goes through here, so this is the one
+  // place the record can be written for all of them.
+  persistSession()
+}
+
+/**
+ * The original bytes of a batch, so the next visit has the folder rather than
+ * the memory of one.
+ *
+ * Not awaited by its caller: the wall is already drawn from memory, and a write
+ * that takes a second must not hold up a render. The record is written again
+ * when the bytes land, and `sessionOf` reads the keys off the photographs — so
+ * "listed" becomes "comes back" at that moment and not before.
+ *
+ * `held` is read fresh for each photograph rather than once for the batch: the
+ * record's `photos` is one entry per photograph in the list, which is what makes
+ * a dropped key an index, and every store moves that array.
+ */
+async function keepPhotos(added: Photo[]): Promise<void> {
+  // Demo photographs are not the user's work and are not kept: see `demoMode`.
+  if (demoMode) return
+  let evicted = 0
+  let refused = 0
+  for (const photo of added) {
+    const held = sessionOf(state).photos
+    let stored: { entry: StoredPhoto | null; dropped: string[] }
+    try {
+      stored = await putBytes(photo, held)
+    } catch {
+      // Storing is a convenience and the wall is already drawn from memory, so
+      // a throw in here is the same event as a refusal — and must not be an
+      // unhandled rejection in the middle of a render.
+      stored = { entry: null, dropped: [] }
+    }
+    for (const key of stored.dropped) {
+      const victim = state.photos[held.findIndex((h) => h.key === key)]
+      if (victim) forgetKey(victim)
+      evicted += 1
+    }
+    if (!stored.entry) refused += 1
+  }
+  persistSession()
+  if (evicted > 0) warnOnce('evicted')
+  if (refused > 0) warnOnce('refused')
+}
+
+/** The two things the storage story can do that the user would want to know
+ *  about, said once each per session: they are consequences of a limit rather
+ *  than of anything the user did wrong, and a wall of toasts per photograph is
+ *  not a message. */
+const warned = new Set<string>()
+function warnOnce(what: 'evicted' | 'refused'): void {
+  if (warned.has(what)) return
+  warned.add(what)
+  toast(
+    what === 'evicted'
+      ? `存储已满：只保留最近 ${MAX_PHOTOS} 张，更早的刷新后不会回来`
+      : '有照片无法保存，刷新后会丢失',
+  )
+}
+
+function onSelectPhoto(index: number): void {
+  // `selectPhoto` hands back the list it was given when the pick is the one
+  // already on, so the comparison is against *that* list and not against a
+  // fresh read — `photoList()` builds a new object every call, and comparing
+  // with one would make this branch unreachable.
+  const current = photoList()
+  const next = selectPhoto(current, index)
+  if (next === current) return
+  useList(next)
+  // On a phone the list is a sheet over the poster, and choosing from it is the
+  // moment the user is done with it: leaving it open would hide the photograph
+  // they just chose. On a desk this is a no-op.
+  closePhotos()
+  photoChanged()
+}
+
+/**
+ * The × on a list row. The photograph goes, its blob URL goes with it (the list
+ * owns that lifetime — see `releasePhoto`), and the thumbnail cache forgets it.
+ * Removing the last photograph is not an error: the app's default state is a
+ * bare wall, and `draw` is what puts it back.
+ */
+function onRemovePhoto(index: number): void {
+  // Read before the list moves: the record's `photos` is one entry per
+  // photograph in list order, so this is where the departing one's key is.
+  const before = sessionOf(state).photos
+  const { list, removed } = removePhoto(photoList(), index)
+  if (!removed) return
+  const key = before[index]?.key ?? ''
+
+  useList(list)
+  forgetThumb(removed)
+  releasePhoto(removed)
+  // Two halves of the same removal: the key so the record stops pointing at it,
+  // the bytes so the disk stops holding them. The record is written by
+  // `photoChanged` a moment later, by which time the key is already gone.
+  forgetKey(removed)
+  if (key) void dropBytes(key)
+  photoChanged()
+  toast(`已移除 ${removed.name}`)
+}
+
+/** The phone's sheet, closed to begin with: the poster is what the screen is
+ *  for, and a list that opened over it would be the first thing a visitor saw. */
+let panelOpen = false
+
 const rail = document.getElementById('rail') as HTMLElement
+const tabsEl = document.getElementById('tabs') as HTMLElement
+const modesEl = document.getElementById('modes') as HTMLElement
+const panels = document.getElementById('panels') as HTMLElement
+const recordActs = document.getElementById('record-acts') as HTMLElement
+const posterCap = document.getElementById('poster-cap') as HTMLElement
+const capName = document.getElementById('cap-name') as HTMLElement
+const capTag = document.getElementById('cap-tag') as HTMLElement
+const wallEmpty = document.getElementById('wall-empty') as HTMLElement
 const drop = document.getElementById('drop') as HTMLElement
 const file = document.getElementById('file') as HTMLInputElement
+const undoBtn = document.getElementById('undo') as HTMLButtonElement
+const redoBtn = document.getElementById('redo') as HTMLButtonElement
+const undoDesk = document.getElementById('undo-desk') as HTMLButtonElement
+const redoDesk = document.getElementById('redo-desk') as HTMLButtonElement
+const mountReset = document.getElementById('mount-reset') as HTMLButtonElement
+const photosOpen = document.getElementById('photos-open') as HTMLButtonElement
+
+// ---------------------------------------------------------------------------
+// 撤销 / 重做
+//
+// The stack itself is `src/ui/history.ts`; what lives here is the two moments
+// it cannot see — the snapshot taken *before* a mutation, and the repaint after
+// one. `rememberStep` is called by every edit; the key names what was edited, so
+// a burst of keystrokes into one field is one step and moving two different
+// sliders is two.
+// ---------------------------------------------------------------------------
+let historyStack = newHistory()
+
+/** The state a step returns to. Deep-copied, because `state.template` is one of
+ *  the `TEMPLATES` singletons until something edits it, and a snapshot that
+ *  shared a block with it would be rewritten by the very edit it exists to
+ *  undo. */
+function snapshot(): Draft {
+  return {
+    template: state.template ? deepCopy(state.template) : null,
+    text: { ...state.text },
+  }
+}
+
+function rememberStep(key: string): void {
+  historyStack = remember(historyStack, key, snapshot(), Date.now())
+  paintHistory()
+}
+
+function paintHistory(): void {
+  const back = !canUndo(historyStack)
+  const forward = !canRedo(historyStack)
+  undoBtn.disabled = back
+  undoDesk.disabled = back
+  redoBtn.disabled = forward
+  redoDesk.disabled = forward
+}
+
+/**
+ * Puts a draft back on the wall — the whole of what 撤销 and 重做 do with what
+ * `history.ts` hands them.
+ *
+ * Everything a pick repaints is repainted: the mount's own record, the words,
+ * the numbers, the panel that may no longer exist for it (an undo can land on
+ * 留白, which has no 文字), and the wall.
+ */
+function applyDraft(draft: Draft): void {
+  state.template = draft.template
+  state.text = { ...draft.text }
+  paintRail(state.template?.id ?? null)
+  if (state.template) paintPlaque(state.template)
+  paintFields()
+  paintControls()
+  paintModes()
+  draw()
+  // A pick (or an undo) can land on a record that names a face this session has
+  // not registered yet: see `resolveFonts`.
+  void resolveFonts()
+  persistSession()
+}
+
+function step(direction: 'undo' | 'redo'): void {
+  const moved = direction === 'undo' ? undo(historyStack, snapshot()) : redo(historyStack, snapshot())
+  if (!moved) return
+  historyStack = moved.history
+  applyDraft(moved.draft)
+  paintHistory()
+}
+
+undoBtn.addEventListener('click', () => step('undo'))
+redoBtn.addEventListener('click', () => step('redo'))
+undoDesk.addEventListener('click', () => step('undo'))
+redoDesk.addEventListener('click', () => step('redo'))
+
+/**
+ * 重置 — the mount as authored, which is what picking its own chip used to do
+ * before that gesture became the way into this panel. The comparison is
+ * `paintAdjusted`'s, so the button is live exactly when the note beside it is
+ * visible: there is nothing to reset about a record that already is the
+ * template.
+ */
+function resetMount(): void {
+  const t = state.template
+  if (!t || mountReset.disabled) return
+  const source = getTemplate(t.id) ?? savedTemplates().find((s) => s.id === t.id)
+  if (!source) return
+  rememberStep('reset')
+  // The singleton itself when it is a built-in: a record equal to the authored
+  // one *is* that template, and handing the app a copy would leave the rail
+  // comparing a record against something that looks just like it.
+  state.template = getTemplate(t.id) ?? { ...deepCopy(source) }
+  paintRail(state.template.id)
+  paintPlaque(state.template)
+  // Both panels, because the record carries both: 重置 is as much about the
+  // words' type as about the mat, and a 文字 panel still showing the numbers that
+  // were just reset would be describing a record the app is no longer holding.
+  paintFields()
+  paintControls()
+  paintModes()
+  draw()
+  persistSession()
+}
+
+mountReset.addEventListener('click', resetMount)
+
+/**
+ * 照片 — the sheet on a phone. The list is the same element either way: above
+ * 901px it is the left column and this is a no-op nobody can see, below it the
+ * class is what slides it over the poster.
+ */
+function closePhotos(): void {
+  document.body.classList.remove('photos-open')
+  photosOpen.setAttribute('aria-expanded', 'false')
+}
+
+photosOpen.addEventListener('click', () => {
+  const open = document.body.classList.toggle('photos-open')
+  photosOpen.setAttribute('aria-expanded', open ? 'true' : 'false')
+})
+document.getElementById('photos-close')?.addEventListener('click', closePhotos)
+document.getElementById('scrim')?.addEventListener('click', closePhotos)
+document.getElementById('add-photo')?.addEventListener('click', () => file.click())
 
 wireInput(
   drop,
   file,
-  (photo) => {
-    state.photo = photo
-    state.exif = photo.exif
-    // The rail is prints of this photograph, so it is repainted here and not
-    // only on a pick: without this the chips stay blank mounts until the user
-    // happens to choose a style, which is the one moment they are not needed.
-    paintRail(state.template?.id ?? null)
-    draw()
-    toast(`已载入 ${photo.width} × ${photo.height}`)
+  (added) => {
+    useList(addPhotos(photoList(), added))
+    // The photograph can resize the canvas — a saved template with an `orig`
+    // ratio is sized from the file — and the 画面 ceilings are measured against
+    // the canvas, so the record is settled against the new one before anything
+    // draws. For the nine built-ins this is the identity: their ratios are
+    // constants, so the canvas a photograph lands on is the canvas that was
+    // already there, and `settleTemplate` hands back the record it was given.
+    if (state.template) {
+      state.template = settleTemplate(state.template, controlContext(state.template))
+    }
+    photoChanged()
+    // ...and then the bytes, which is the half that survives a refresh. Not
+    // awaited: the wall is drawn, and the record is written again when the
+    // store lands (`keepPhotos`), so "listed" becomes "comes back" a moment
+    // after the user sees the photograph on the wall.
+    void keepPhotos(added)
+    // `added[0]` and not the last one: `addPhotos` puts the wall on the *first*
+    // of the batch, and a toast naming a photograph the user is not looking at
+    // is worse than no toast.
+    const shown = added[0]!
+    toast(
+      added.length === 1
+        ? `已载入 ${shown.width} × ${shown.height}`
+        : `已载入 ${added.length} 张，当前 ${shown.width} × ${shown.height}`,
+    )
   },
   (msg) => toast(msg),
   readExif,
 )
 
-document.getElementById('save')?.addEventListener('click', async () => {
+/**
+ * 保存 — one handler behind the two buttons that carry the word: the dock's,
+ * which is the one on a desk, and the top bar's, which is the one on a phone.
+ * Only one of them is ever on screen (see `app.css`), and two copies of this
+ * work is how the two would come to disagree about what saving does.
+ */
+async function savePoster(): Promise<void> {
   const template = state.template
-  const photo = state.photo
+  const photo = activePhoto(state)
   if (!photo || !template) {
     toast('请先载入图片')
     return
@@ -242,7 +1210,7 @@ document.getElementById('save')?.addEventListener('click', async () => {
       template,
       photos: [photo],
       text: state.text,
-      exif: state.exif,
+      exif: photo.exif,
       want: 2,
     })
     // The scale that was *drawn*, not the one that was asked for: the export
@@ -254,17 +1222,21 @@ document.getElementById('save')?.addEventListener('click', async () => {
     if (!isIOS()) download(blob, filename)
 
     const dataUrl = await blobToDataUrl(blob)
+    const delivery = deliverySize(state.size, template, photo)
     showCeremony(
       dataUrl,
-      state.size.W * k,
-      state.size.H * k,
+      delivery.W * k,
+      delivery.H * k,
       () => void draw(),
       isIOS() ? '长按图片存储到相册' : undefined,
     )
   } catch (e) {
     toast(e instanceof Error ? e.message : '导出失败')
   }
-})
+}
+
+document.getElementById('save')?.addEventListener('click', () => void savePoster())
+document.getElementById('save-top')?.addEventListener('click', () => void savePoster())
 
 /**
  * Appends `copy` to the saved list and reports where it landed — `stored` in
@@ -326,13 +1298,29 @@ function removeSaved(id: string): void {
   paintRail(state.template?.id ?? null)
   if (wasActive && state.template) {
     paintPlaque(state.template)
-    // the fields belong to the template, so a delete that moves the selection
-    // has to move them with it
+    // the fields and the sliders belong to the template, so a delete that moves
+    // the selection has to move them with it
     paintFields()
+    paintControls()
     // the canvas is showing a template that no longer exists until this runs
     draw()
   }
+  persistSession()
   toast(`已删除模板：${victim.name}`)
+}
+
+/**
+ * A template's numbers, as its own objects.
+ *
+ * `state.template` is a `TEMPLATES` singleton until a slider moves, and even
+ * then the `frame`/`background` blocks it carries are objects the rail is also
+ * reading. A saved record outlives both, so it is copied by value rather than
+ * by reference. A JSON round trip rather than `structuredClone`: the record is
+ * plain JSON data — it is handed to `JSON.stringify` a few lines below — and
+ * `structuredClone` is not in every WebKit this app runs on.
+ */
+function deepCopy(t: Template): Template {
+  return JSON.parse(JSON.stringify(t)) as Template
 }
 
 /**
@@ -345,6 +1333,12 @@ function removeSaved(id: string): void {
  * entitlement is checked against the built-in set and a saved copy is not a
  * purchase; the id is a timestamp because two saves of the same style are two
  * templates and collapsing them would lose one.
+ *
+ * The copy is deep, and that is what makes the 画面 sliders persistable: they
+ * write their numbers into `state.template`, so the record this reads is the
+ * geometry the user is looking at. Sharing a nested block instead would store a
+ * live reference, and the next slider drag would edit a record that is already
+ * on disk.
  */
 document.getElementById('saveTpl')?.addEventListener('click', () => {
   const template = state.template
@@ -356,7 +1350,7 @@ document.getElementById('saveTpl')?.addEventListener('click', () => {
   }
   const name = (prompt('模板名称', template.name + ' 副本') || '').trim()
   if (!name) return
-  const copy: Template = { ...template, id: `custom-${Date.now()}`, name, premium: false }
+  const copy: Template = { ...deepCopy(template), id: `custom-${Date.now()}`, name, premium: false }
   const where = persist(copy)
   // Before the toast, not after: what the user is told has to describe a rail
   // they are already looking at.
@@ -366,9 +1360,73 @@ document.getElementById('saveTpl')?.addEventListener('click', () => {
   else toast(`已保存模板：${name}`)
 })
 
+paintPhotos()
 paintRail(state.template?.id ?? null)
 paintFields()
+paintControls()
+paintModes()
+// An empty stack, so 撤销 starts disabled: the first thing a user can undo is
+// the first thing they do.
+paintHistory()
 draw()
+
+// ---------------------------------------------------------------------------
+// Where the last visit left off.
+//
+// The record is read before the first paint, so the app comes up already
+// wearing the mount and the words the user left it with rather than flashing
+// the boot template at them. The *photographs* come after, because their bytes
+// have to be read back out of IndexedDB and decoded, which is a job for the
+// event loop; until they land the wall is bare, which is a state this app is
+// already honest about being in.
+// ---------------------------------------------------------------------------
+const restored = loadSession(recordStore)
+
+if (restored && !demoMode) {
+  state.text = restored.text
+  if (restored.template) {
+    // A stored built-in comes back as the singleton it is, not as a copy of it.
+    // The copies are what 存为模板 makes, and this one was made by the session
+    // writer; everything downstream — the 已调整 marker, the rail's chips — reads
+    // the difference between "the template" and "a template somebody edited".
+    const stock = getTemplate(restored.template.id)
+    state.template =
+      stock && geometryOf(stock) === geometryOf(restored.template) ? stock : restored.template
+  }
+  // Paint what came back, in the order a pick paints it: the mount, the plaque,
+  // the words, the numbers, the wall.
+  paintRail(state.template?.id ?? null)
+  if (state.template) paintPlaque(state.template)
+  paintFields()
+  paintControls()
+  paintModes()
+  draw()
+}
+
+if (restored && !demoMode && restored.photos.some((p) => p.key !== '')) {
+  const entries = restored.photos
+  void (async () => {
+    try {
+      const { photos, at } = await restorePhotos(entries)
+      if (photos.length === 0) return
+      const current = photoList()
+      if (current.photos.length === 0) {
+        useList({ photos, active: restoredActive(at, restored.active) })
+      } else {
+        // The user added a photograph while the restore was still reading (a
+        // drop during a slow decode). Theirs is the one they just chose, so the
+        // restored list goes underneath it and the wall stays where they put
+        // it — the alternative is a wall that jumps out from under them.
+        useList({ photos: [...photos, ...current.photos], active: current.active + photos.length })
+      }
+      photoChanged()
+    } catch {
+      // A restore that throws is a session that does not come back. The app is
+      // already on screen and already usable, and there is nothing here the
+      // user would rather be told than the bare wall they can see.
+    }
+  })()
+}
 
 // ---------------------------------------------------------------------------
 // Demo affordance — user-facing, and not gated on ?dev=1.
@@ -383,11 +1441,16 @@ draw()
 // reason: it calls `pick`, and `pick` reads `rail`, a `const` declared above.
 // Running earlier would be a temporal-dead-zone crash, not a race.
 //
-// The photo is `demo`-named and EXIF-less on purpose: the spec plate is the
+// The photograph is `demo`-named and EXIF-less on purpose: the spec plate is the
 // one surface that must *not* appear unless real metadata is behind it, so the
 // demo is also the standing check that it stays absent.
+//
+// It is not stored, and a visit here neither reads nor writes the session
+// (`demoMode`): a generated photograph is not the user's work, and keeping it —
+// which this used to do — made a reload of this URL restore the demo it had
+// stored and then add another one, so the list grew by one per refresh.
 // ---------------------------------------------------------------------------
-if (new URLSearchParams(location.search).get('demo') === '1') {
+if (demoMode) {
   const d = document.createElement('canvas')
   d.width = 1400
   d.height = 1050
@@ -408,18 +1471,53 @@ if (new URLSearchParams(location.search).get('demo') === '1') {
   }
   const im = new Image()
   im.onload = () => {
-    state.photo = { el: im, width: im.naturalWidth, height: im.naturalHeight, name: 'demo', exif: null }
-    state.exif = null
-    // same reason as the loaded-photo path above: the chips are prints of this
-    // photograph, and the demo is the front door — blank mounts there would be
-    // the defect rather than a corner of it
-    paintRail(state.template?.id ?? null)
-    draw()
+    // Through the same list and the same repaint as a photograph the user
+    // loaded: the demo is the front door, and a front door that skipped the
+    // list would leave the left column empty with a poster on the wall.
+    const demo: Photo = {
+      el: im,
+      width: im.naturalWidth,
+      height: im.naturalHeight,
+      name: 'demo',
+      exif: null,
+    }
+    useList(addPhotos(photoList(), [demo]))
+    photoChanged()
+    // No `keepPhotos`: the demo photograph is not the user's work and does not
+    // go to the store (see `demoMode`). What that buys is a `?demo=1` reload
+    // that is the same one-photograph demo every time.
   }
   im.src = d.toDataURL()
 
   const tplId = new URLSearchParams(location.search).get('tpl')
   if (tplId && getTemplate(tplId)) pick(tplId)
+}
+
+// ---------------------------------------------------------------------------
+// The typefaces, one step after the first frame.
+//
+// Both halves are reads out of the store — the picker's list of names, and the
+// faces the current record names — and both end in a repaint of the 文字 panel.
+// Deferring them is what keeps the first frame a synchronous paint of a poster
+// the app already knows, and it costs nothing: until they land the picker is
+// short a group and a record's `user:` face draws as its fallback.
+// ---------------------------------------------------------------------------
+void (async () => {
+  families = await fontOptions()
+  paintFields()
+  await resolveFonts()
+})()
+
+// ---------------------------------------------------------------------------
+// ...and the app's own faces, which arrive after the first frame too.
+//
+// The fix for that is `resolveFonts` above, which *asks* for every face the poster
+// needs — a canvas never asks for itself. This is the belt to its braces: the
+// event fires when a face lands, whoever wanted it, and one render is the whole
+// cost of being sure the wall is not wearing a fallback.
+// ---------------------------------------------------------------------------
+if (typeof document.fonts?.addEventListener === 'function') {
+  document.fonts.addEventListener('loadingdone', () => draw())
 }
 
 // ---------------------------------------------------------------------------
@@ -436,6 +1534,12 @@ if (new URLSearchParams(location.search).has('dev')) {
   const w = window as unknown as Record<string, unknown>
   w.__frame = {
     canvas: probeCanvas,
+    /** The photograph the wall is holding, as the app holds it — the only way a
+     *  spec can ask what the app knows rather than what it drew. */
+    photo: () => {
+      const p = activePhoto(state)
+      return p ? { name: p.name, width: p.width, height: p.height, exif: p.exif } : null
+    },
     size: () => ({ W: probeCanvas.width, H: probeCanvas.height }),
     setSize: (W: number, H: number) => {
       probeCanvas.width = W
@@ -462,17 +1566,32 @@ if (new URLSearchParams(location.search).has('dev')) {
   // to reach into `src/` for a function the app itself does not import
   w.__frameCore = {
     render,
+    outputRect,
     drawMat,
+    drawBevel,
     drawBackground,
     drawText,
     measureToFit,
     frameFont,
     matRect,
     roundedRect,
+    fitRect,
+    aspectOf,
+    frameRect,
     drawPlate,
     plateFields,
+    plateLines,
+    // the type block's own arithmetic, so a spec can ask the same questions the
+    // panel's ceilings ask without reaching into `src/`
+    blockTop,
+    textSpan,
+    baseSize,
+    textOffsetBounds,
+    sizeCeiling,
+    settleText,
   }
   w.__frameTemplates = { TEMPLATES, getTemplate }
+  w.__frameFonts = { FONT_CHOICES, stackOf }
   w.__frameCeremony = { showCeremony }
   w.__frameExport = { exportPng, renderToCanvas, fitsCanvas, stamp }
 }

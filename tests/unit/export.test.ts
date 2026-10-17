@@ -1,14 +1,72 @@
 import { describe, it, expect } from 'vitest'
 import {
   areaBudget,
+  deliverySize,
   fitsCanvas,
   stamp,
   MAX_CANVAS_AREA,
   MAX_CANVAS_EDGE,
   PREMIUM_CANVAS_AREA,
 } from '../../src/ui/export'
-import { resolveSize } from '../../src/core/geometry'
-import { TEMPLATES } from '../../src/core/templates'
+import { aspectOf, mountRect, resolveSize } from '../../src/core/geometry'
+import { TEMPLATES, getTemplate } from '../../src/core/templates'
+import type { Photo } from '../../src/core/types'
+
+/**
+ * The size the file will be.
+ *
+ * 无照片 is the whole reason this function exists: the mode has no canvas, so the
+ * delivery is the mount's own box — the 800×800 a 1000×1000 poster crops down to.
+ * Everything that budgets, draws or reports a size asks it, so the claim worth
+ * pinning is that they cannot disagree.
+ */
+describe('deliverySize', () => {
+  const photo = { width: 1600, height: 1200 } as Photo
+
+  it('is the whole canvas for every mode that has one', () => {
+    const t = getTemplate('classic')!
+    const size = resolveSize(t.canvas.ratio, 1440)
+    const template = { ...t, background: { ...t.background, mode: 'blur' as const } }
+    expect(deliverySize(size, template, photo)).toEqual(size)
+  })
+
+  it('is the mount’s own box in 无照片, rounded to whole pixels', () => {
+    const t = getTemplate('polaroid')!
+    const size = resolveSize(t.canvas.ratio, 1440)
+    const card = mountRect(size, aspectOf(t.canvas.ratio, photo), t.frame)
+    const delivery = deliverySize(size, { ...t, background: { mode: 'mount' } }, photo)
+    // Rounded because a canvas has whole pixels and the card's box is a division's
+    // remainder; the size the poster *is* has to be a size a file can be.
+    expect(delivery).toEqual({ W: Math.round(card.w), H: Math.round(card.h) })
+    // ...and it is the crop the mode promises: smaller than the canvas it was
+    // measured in, which is the field a 无照片 file does not carry.
+    expect(delivery.W).toBeLessThan(size.W)
+    expect(delivery.H).toBeLessThan(size.H)
+  })
+
+  it('gives the export ladder the room the crop frees, on every built-in', () => {
+    for (const t of TEMPLATES) {
+      const size = resolveSize(t.canvas.ratio, 1440)
+      const mounted = { ...t, background: { ...t.background, mode: 'mount' as const } }
+      const delivery = deliverySize(size, mounted, photo)
+      // The budget is about the canvas the file is drawn on, so a poster delivered
+      // as its card must be measured as its card — otherwise the ladder refuses a
+      // 4× that would have fit, which is a downgrade the user pays for and never
+      // sees.
+      expect(fitsCanvas(delivery, 4, areaBudget(4)), t.id).toBe(true)
+      expect(fitsCanvas(size, 4, areaBudget(4)) && delivery.W < size.W, t.id).toBe(true)
+    }
+  })
+
+  it('answers without a photograph, because a canvas can be drawn before one arrives', () => {
+    const t = getTemplate('classic')!
+    const size = resolveSize(t.canvas.ratio, 1440)
+    expect(deliverySize(size, t, null)).toEqual(size)
+    // 无照片 with no photograph has no mount to measure, and `render` draws no
+    // mount: the canvas is the answer rather than a zero.
+    expect(deliverySize(size, { ...t, background: { mode: 'mount' } }, null)).toEqual(size)
+  })
+})
 
 describe('fitsCanvas', () => {
   it('accepts the exports this app actually produces at 2x', () => {

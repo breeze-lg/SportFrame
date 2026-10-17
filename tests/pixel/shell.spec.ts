@@ -2,8 +2,12 @@ import { test, expect } from '@playwright/test'
 
 test('the dock offers exactly one primary action', async ({ page }) => {
   await page.goto('/')
-  await expect(page.locator('.btn-primary')).toHaveCount(1)
-  await expect(page.locator('.btn-primary')).toHaveText('保存')
+  // On screen, not in the DOM: 保存 is drawn twice — the dock's, which is the
+  // one on a desk, and the top bar's, which is the one on a phone — and exactly
+  // one of them is ever visible (see `app.css`). Two primary actions a user can
+  // see would be two answers to \"what does this screen do\".
+  await expect(page.locator('.btn-primary:visible')).toHaveCount(1)
+  await expect(page.locator('.btn-primary:visible')).toHaveText('保存')
 })
 
 /**
@@ -85,15 +89,52 @@ test('the drop zone can be reached and opened from the keyboard alone', async ({
   expect(await page.evaluate(() => (window as any).__opens)).toBe(3)
 })
 
-test('there is no adjustments control in stages 1-4', async ({ page }) => {
+/**
+ * This guard used to read "there is no adjustments control in stages 1-4" — no
+ * element containing 调整, no `input[type=range]` anywhere in the dock. The 画面
+ * panel is a later stage's work and is exactly the surface that test said was
+ * absent, so the claim about *stages* is retired. What replaces it is the claim
+ * that still has content: the sliders that exist are the panel's, they all
+ * carry a name, and there is no second place in this app that adjusts a poster.
+ *
+ * `tests/pixel/controls.spec.ts` is where the panel itself is answered for —
+ * which controls each template gets, that a drag reaches the wall, and that
+ * 存为模板 keeps the numbers.
+ */
+test('the two panels between them are the adjustment surface, and nothing else is', async ({
+  page,
+}) => {
   await page.goto('/')
-  // Non-exact: a literal <button>调整</button> is not the only shape this
-  // returns in. A heading 调整参数, or a compound label, contains the same
-  // characters and must fail this guard too.
-  await expect(page.getByText('调整', { exact: true })).toHaveCount(0)
-  await expect(page.getByText('调整')).toHaveCount(0)
-  // A slider with no text at all — the shape an adjustments panel actually
-  // ships as — carries none of that text, so the range input is counted
-  // separately.
-  await expect(page.locator('input[type="range"]')).toHaveCount(0)
+
+  // 画面 first: 经典 is the boot mount and a blur one, so all nine rows are on —
+  // six for the mount and three for 后景.
+  const mount = page.locator('#control-row input[type="range"]')
+  await expect(mount).toHaveCount(9)
+
+  const labels = await mount.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
+  for (const label of labels) {
+    expect(label, 'a slider with no accessible name').toBeTruthy()
+    // one row per slider, with its own readout beside it
+    await expect(page.locator(`#controls .ctl:has(input[aria-label="${label}"])`)).toHaveCount(1)
+    await expect(page.locator(`#controls .ctl:has(input[aria-label="${label}"]) .ctl-val`)).toHaveCount(1)
+  }
+
+  // 文字 next: two for the block's position, one per slot the template prints —
+  // and every one of them in the 文字 panel, not loose in the dock.
+  await page.locator('.mode', { hasText: '文字' }).click()
+  const type = page.locator('#field-row input[type="range"]')
+  await expect(type).toHaveCount(4)
+  expect(await type.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).toEqual([
+    '水平',
+    '垂直',
+    '副标题字号',
+    '主标题字号',
+  ])
+
+  // No slider anywhere else, and no two of them share a name: two slots both
+  // showing 字号 would be two sliders a screen reader cannot tell apart.
+  const all = page.locator('input[type="range"]')
+  expect(await all.evaluateAll((els) => els.filter((e) => !e.closest('#panels')).length)).toBe(0)
+  const names = await all.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
+  expect(new Set(names).size, 'two sliders share a name').toBe(names.length)
 })

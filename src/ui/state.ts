@@ -1,8 +1,17 @@
-import type { Exif, Photo, Size, Template, TextSlotId } from '../core/types'
+import type { Photo, Size, Template, TextSlotId } from '../core/types'
+import type { Mode } from './modes'
+import type { TabId } from './tabs'
 
 export type AppState = {
-  photo: Photo | null
-  exif: Exif | null
+  /** Every photograph loaded this session, in the order they arrived. This list
+   *  is the left column; the wall shows one of them. */
+  photos: Photo[]
+  /** Which of `photos` the wall is showing. An index rather than a reference,
+   *  because the list is what gets appended to and deleted from — a held
+   *  reference would have to be re-found after every mutation, and would be
+   *  wrong for exactly as long as that took. Read it through `activePhoto` in
+   *  `src/ui/photos.ts`, which is where the list's own rules live. */
+  active: number
   template: Template | null
   /** What the user has typed, by slot. The app owns these, not the template:
    *  switching mount keeps the words and lets the new typography set them.
@@ -11,12 +20,18 @@ export type AppState = {
   text: Partial<Record<TextSlotId, string>>
   size: Size
   longEdge: number
+  /** Which panel the dock is showing. A view, not a document: it is not in the
+   *  session record, and `modeFor` decides what it can be for the template in
+   *  hand. */
+  mode: Mode
+  /** Which collection the rack is filtered by. Also a view — see `mode`. */
+  tab: TabId
 }
 
 export function createState(initial: Partial<AppState> = {}): AppState {
   return {
-    photo: null,
-    exif: null,
+    photos: [],
+    active: 0,
     template: null,
     text: {},
     // The placeholder before the first `draw()`, and it has to agree with
@@ -26,6 +41,10 @@ export function createState(initial: Partial<AppState> = {}): AppState {
     // reader had two numbers for one canvas and only one of them was real.
     size: { W: 1152, H: 1440 },
     longEdge: 1440,
+    // 画面 rather than 文字: the mount is what a photograph is put in, it exists
+    // for every template, and it is the panel the reference editor opens on.
+    mode: 'frame',
+    tab: 'all',
     ...initial,
   }
 }

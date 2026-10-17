@@ -1,5 +1,72 @@
 import { describe, it, expect } from 'vitest'
-import { aspectOf, cover, fitRect, matRect, resolveSize } from '../../src/core/geometry'
+import { aspectOf, cover, fitRect, matRect, mountRect, resolveSize } from '../../src/core/geometry'
+import { TEMPLATES, getTemplate } from '../../src/core/templates'
+import { matSumCeiling } from '../../src/core/limits'
+
+/**
+ * 无照片's rectangle: the mount's own box inside a canvas of the template's shape.
+ *
+ * This is what the mode delivers — a 1000×1000 poster whose photograph and border
+ * measure 800×800 is written at 800×800 — so the claim here is a claim about the
+ * *file*: the box is inside the canvas it was measured in, it is the frame grown by
+ * the mat, and it is what the mat's own ceilings already promised would fit.
+ */
+describe('mountRect', () => {
+  const photo = { width: 1600, height: 1200 }
+
+  it('is the frame grown by its mat, and nothing else', () => {
+    const t = getTemplate('polaroid')!
+    const size = resolveSize(t.canvas.ratio, 1440)
+    const aspect = aspectOf(t.canvas.ratio, photo)
+    const frame = fitRect(size, aspect, t.frame.scale, 0, 0)
+    const card = mountRect(size, aspect, t.frame)
+    // Three sides by `mat`, the bottom by `mat + matBottom` — the same arithmetic
+    // `render` lays the mount out with, because it is the same `matRect`.
+    expect(card).toEqual(matRect(frame, t.frame.mat, t.frame.matBottom, 1))
+    expect(card.w).toBeCloseTo(frame.w + t.frame.mat * 2, 9)
+    expect(card.h).toBeCloseTo(frame.h + t.frame.mat * 2 + t.frame.matBottom, 9)
+  })
+
+  it('sits inside its canvas on every built-in — that is what the mode delivers', () => {
+    for (const t of TEMPLATES) {
+      const size = resolveSize(t.canvas.ratio, 1440)
+      const card = mountRect(size, aspectOf(t.canvas.ratio, photo), t.frame)
+      expect(card.x, t.id).toBeGreaterThanOrEqual(0)
+      expect(card.y, t.id).toBeGreaterThanOrEqual(0)
+      expect(card.x + card.w, t.id).toBeLessThanOrEqual(size.W)
+      expect(card.y + card.h, t.id).toBeLessThanOrEqual(size.H)
+      // ...and it is smaller than the canvas, or 无照片 would be a mode that did
+      // nothing: the field the crop removes has to be there to remove.
+      expect(card.w, t.id).toBeLessThan(size.W)
+      expect(card.h, t.id).toBeLessThan(size.H)
+    }
+  })
+
+  it('follows the offsets a record carries, so a crop never cuts the photograph', () => {
+    const t = getTemplate('classic')!
+    const size = resolveSize(t.canvas.ratio, 1440)
+    const aspect = aspectOf(t.canvas.ratio, photo)
+    const moved = { ...t.frame, ox: 4, oy: -3 }
+    const card = mountRect(size, aspect, moved)
+    // A record made in another mode is still a record: its photograph is where its
+    // numbers say it is, and the window has to go there.
+    expect(card.x).toBeGreaterThan(mountRect(size, aspect, t.frame).x)
+    expect(card.y).toBeLessThan(mountRect(size, aspect, t.frame).y)
+    expect(card.w).toBeCloseTo(mountRect(size, aspect, t.frame).w, 9)
+  })
+
+  it('agrees with the ceiling that put the mat inside the canvas', () => {
+    // The deepest mat the panel offers, on the smallest canvas this app draws: the
+    // card still fits, which is the promise `matSumCeiling` makes and the one a crop
+    // would break loudly by cutting the card's edge off.
+    const t = getTemplate('spec-sheet')!
+    const size = resolveSize(t.canvas.ratio, 1440)
+    const deepest = Math.floor(matSumCeiling(size, t.frame.scale) - t.frame.matBottom)
+    const card = mountRect(size, aspectOf(t.canvas.ratio, photo), { ...t.frame, mat: deepest })
+    expect(card.y).toBeGreaterThanOrEqual(0)
+    expect(card.y + card.h).toBeLessThanOrEqual(size.H)
+  })
+})
 
 describe('resolveSize', () => {
   it('puts the long edge on width for landscape ratios', () => {

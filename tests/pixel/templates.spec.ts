@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { aspectOf, fitRect, matRect } from '../../src/core/geometry'
+import { aspectOf, fitRect, matRect, resolveSize } from '../../src/core/geometry'
 import { getTemplate } from '../../src/core/templates'
 
 /**
@@ -92,7 +92,7 @@ for (const theme of ['light', 'dark'] as const) {
       await page.waitForFunction(() => '__frame' in window)
 
       const result = await page.evaluate(
-        async ({ templateId, size }) => {
+        async ({ templateId, size, full }) => {
           const f = (window as any).__frame
           const { render } = (window as any).__frameCore
           const { getTemplate } = (window as any).__frameTemplates
@@ -101,7 +101,7 @@ for (const theme of ['light', 'dark'] as const) {
           await new Promise((res, rej) => {
             img.onload = res
             img.onerror = rej
-            img.src = '/sample/sample.webp'
+            img.src = '/sample/sample_2.jpg'
           })
           const photo = {
             el: img,
@@ -111,14 +111,45 @@ for (const theme of ['light', 'dark'] as const) {
             exif: null,
           }
 
-          f.setSize(size.W, size.H)
+          // The canvas the app would deliver this poster on. 无照片 writes the
+          // mount's own box, so a postcard-sized canvas would be a canvas nobody
+          // ever sees, and the transparency check below is about the file.
+          const tplNow = getTemplate(templateId)
+          const aspect = (window as any).__frameCore.aspectOf(tplNow.canvas.ratio, photo)
+          const win = (window as any).__frameCore.outputRect(size, tplNow, aspect)
+          const W = Math.max(1, Math.round(win.w))
+          const H = Math.max(1, Math.round(win.h))
+
+          // ...and, where the poster *is* the mount's own box, a second render at the
+          // size the app actually writes (`state.longEdge`, see `main.ts`). 样张's mat
+          // is absolute pixels while the canvas is a fraction of the layout's size, so
+          // at a 480×600 canvas its mount does not fit at all (the fact that decides
+          // the plate tests' size too, see `tests/pixel/plate.spec.ts`) — and an
+          // invariant asserted there would be a claim about a poster nobody can make.
+          let strict: number | null = null
+          if (tplNow.background.mode !== 'blur') {
+            const big = (window as any).__frameCore.outputRect(full, tplNow, aspect)
+            const bw = Math.max(1, Math.round(big.w))
+            const bh = Math.max(1, Math.round(big.h))
+            f.setSize(bw, bh)
+            const bctx = f.ctx()
+            bctx.setTransform(1, 0, 0, 1, 0, 0)
+            bctx.clearRect(0, 0, bw, bh)
+            render({ ctx: bctx, size: full, k: 1, template: tplNow, photos: [photo], text: {}, exif: null })
+            const bd = bctx.getImageData(0, 0, bw, bh).data
+            let holes = 0
+            for (let i = 3; i < bd.length; i += 4) if (bd[i] === 0) holes++
+            strict = holes
+          }
+
+          f.setSize(W, H)
           const ctx = f.ctx()
-          ctx.clearRect(0, 0, size.W, size.H)
+          ctx.clearRect(0, 0, W, H)
           render({
             ctx,
             size,
             k: 1,
-            template: getTemplate(templateId),
+            template: tplNow,
             photos: [photo],
             text: {},
             exif: null,
@@ -127,24 +158,36 @@ for (const theme of ['light', 'dark'] as const) {
             // the page's own theme, so "in dark" is something this test saw
             // rather than something it assumed from the line above
             theme: document.documentElement.getAttribute('data-theme'),
-            px: Array.from(ctx.getImageData(0, 0, size.W, size.H).data) as number[],
+            W,
+            H,
+            px: Array.from(ctx.getImageData(0, 0, W, H).data) as number[],
+            strict: strict == null ? null : (strict as number),
           }
         },
-        { templateId: id, size: SIZE },
+        { templateId: id, size: SIZE, full: resolveSize(getTemplate(id)!.canvas.ratio, 1440) },
       )
 
       const px = result.px
       expect(result.theme, `${id}: the page did not paint in ${theme}`).toBe(theme)
-      expect(px.length, `${id} did not fill the canvas`).toBe(SIZE.W * SIZE.H * 4)
+      expect(px.length, `${id} did not fill the canvas`).toBe(result.W * result.H * 4)
 
       // invariant: something was actually drawn
       const nonBlank = px.some((v, i) => i % 4 !== 3 && v > 8)
       expect(nonBlank, `${id} drew nothing`).toBe(true)
 
-      // invariant: no fully transparent pixel inside the canvas
+      // invariant: nothing the poster draws is transparent. For 带背景 that is the
+      // whole canvas and the answer is zero. For 无照片 the file is the mount's own
+      // box, and the render above is a 480×600 probe whose mat — absolute pixels —
+      // does not fit that canvas at all; the same render at the size the app writes
+      // is the one this assertion is about (see the probe's `strict`). `matchGolden`
+      // below pins every pixel of the probe render byte for byte either way.
       let transparent = 0
       for (let i = 3; i < px.length; i += 4) if (px[i] === 0) transparent++
-      expect(transparent, `${id} left transparent pixels`).toBe(0)
+      if (result.strict != null) {
+        expect(result.strict, `${id} left transparent pixels`).toBe(0)
+      } else {
+        expect(transparent, `${id} left transparent pixels`).toBe(0)
+      }
 
       // One golden per template, not one per theme. The artifact does not
       // follow the chrome: `--mat` is `#FFFFFF` in both themes and every colour
@@ -381,7 +424,7 @@ test.describe('the preview downscale', () => {
           i.src = src
         })
 
-      const full = await load('/sample/sample.webp')
+      const full = await load('/sample/sample_2.jpg')
       // same dimensions, different pixels: what a downscale looks like to the
       // renderer, which only ever hands it to `drawImage`
       const c = document.createElement('canvas')
@@ -502,7 +545,7 @@ test.describe('mat-anchored text at k = 2', () => {
         await new Promise((res, rej) => {
           img.onload = res
           img.onerror = rej
-          img.src = '/sample/sample.webp'
+          img.src = '/sample/sample_2.jpg'
         })
         const photo = {
           el: img,

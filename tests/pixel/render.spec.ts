@@ -19,7 +19,7 @@ test.beforeEach(async ({ page }) => {
     await new Promise((res, rej) => {
       img.onload = res
       img.onerror = rej
-      img.src = '/sample/sample.webp'
+      img.src = '/sample/sample_2.jpg'
     })
     ;(window as any).__photo = {
       el: img,

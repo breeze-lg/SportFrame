@@ -6,11 +6,11 @@ test('the ceremony hides the chrome and states the dimensions', async ({ page })
   await page.goto('/?dev=1')
   await page.waitForFunction(() => '__frameCeremony' in window)
 
-  // The dock is the shell's own (it ships with the frame-first layout), and it
-  // carries a focusable control — `#save` — because half of what
-  // `body.ceremony-open .dock` has to do is keep that control out of the tab
-  // order. Nothing is fabricated here: a shell that loses its dock fails this
-  // spec rather than being papered over.
+  // The shell's three columns, each carrying focusable controls — the photo
+  // list, the rail of styles, and `#save` — because half of what
+  // `body.ceremony-open` has to do is keep those controls out of the tab order.
+  // Nothing is fabricated here: a shell that loses a column fails this spec
+  // rather than being papered over.
   await page.evaluate(() => {
     const mod = (window as any).__frameCeremony
     return mod.showCeremony('data:image/gif;base64,R0lGODlhAQABAAAAACw=', 2880, 3600, () => {})
@@ -19,28 +19,38 @@ test('the ceremony hides the chrome and states the dimensions', async ({ page })
   await expect(page.locator('.ceremony')).toHaveCount(1)
   await expect(page.locator('.ceremony-dims')).toHaveText('2880 × 3600 PNG')
 
-  // the dock is present but receded — not removed, so nothing reflows
-  const dockOpacity = await page.locator('.dock').evaluate(
-    (el) => getComputedStyle(el).opacity,
-  )
-  expect(dockOpacity).toBe('0')
+  // which column, if any, holds the focused element
+  const focusedColumn = () =>
+    page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null
+      if (!el) return 'none'
+      for (const sel of ['.photos', '.styles', '.dock']) {
+        if (el.closest(sel)) return sel
+      }
+      return el.tagName
+    })
 
-  // ...and invisible, not merely transparent. `opacity: 0` alone leaves the
-  // dock's controls in the tab order, so a keyboard user tabbing during the
-  // ceremony lands on controls they cannot see.
-  await expect(page.locator('.dock')).toHaveCSS('visibility', 'hidden')
+  for (const column of ['.photos', '.styles', '.dock']) {
+    // the column is present but receded — not removed, so nothing reflows
+    expect(
+      await page.locator(column).evaluate((el) => getComputedStyle(el).opacity),
+      `${column} did not recede`,
+    ).toBe('0')
+
+    // ...and invisible, not merely transparent. `opacity: 0` alone leaves its
+    // controls in the tab order, so a keyboard user tabbing during the ceremony
+    // lands on controls they cannot see.
+    await expect(page.locator(column)).toHaveCSS('visibility', 'hidden')
+  }
 
   const tabbed: string[] = []
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 6; i++) {
     await page.keyboard.press('Tab')
-    tabbed.push(
-      await page.evaluate(() => {
-        const el = document.activeElement as HTMLElement | null
-        return el?.closest('.dock') ? 'dock' : (el?.tagName ?? 'none')
-      }),
-    )
+    tabbed.push(await focusedColumn())
   }
-  expect(tabbed).not.toContain('dock')
+  expect(tabbed).not.toContain('.photos')
+  expect(tabbed).not.toContain('.styles')
+  expect(tabbed).not.toContain('.dock')
 
   await page.locator('[data-act="done"]').click()
   await expect(page.locator('.ceremony')).toHaveCount(0)
@@ -48,11 +58,16 @@ test('the ceremony hides the chrome and states the dimensions', async ({ page })
   await expect(page.locator('body')).not.toHaveClass(/ceremony-open/)
   await expect(page.locator('.dock')).toHaveCSS('visibility', 'visible')
 
-  // the dock is reachable again, not left stolen from the keyboard
-  let reachable = false
-  for (let i = 0; i < 4 && !reachable; i++) {
+  // every column is reachable again, not left stolen from the keyboard.
+  //
+  // 26 presses and not 12: the collections row above the rack added four stops
+  // before the chips, so the dock sits further along the tab order than it did.
+  const seen = new Set<string>()
+  for (let i = 0; i < 26; i++) {
     await page.keyboard.press('Tab')
-    reachable = await page.evaluate(() => !!document.activeElement?.closest('.dock'))
+    seen.add(await focusedColumn())
   }
-  expect(reachable).toBe(true)
+  for (const column of ['.photos', '.styles', '.dock']) {
+    expect(seen, `${column} is unreachable by keyboard`).toContain(column)
+  }
 })
