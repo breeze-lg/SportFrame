@@ -1,571 +1,127 @@
 # 模糊画框 / Frame & Mat
 
-Turn a good photograph into a framed poster worth posting. Drop in a photo; the
-app puts a white mat, a shadow, a background treatment, and a camera spec plate
-around it, and exports a PNG at social-ready resolution.
+**English** · [中文](README.zh-CN.md)
 
-## 样张 — the look, in two pictures
+Turn a good photograph into a framed poster worth sharing.
 
-Two processed samples: the photograph on top, a coloured band under it carrying one
-line of words in a colour of its own.
+Import a photo and the app adds a white mat, a shadow, a background treatment, and a camera spec plate, then exports a social-ready PNG. Everything runs locally in the browser; photographs never leave the device.
+
+## Samples
 
 | | |
-|---|---|
+| --- | --- |
 | ![LIFE](docs/sample_3.jpg) | ![Carpe Diem](docs/sample_4.jpg) |
 
-Photographs are a list. Load one or a dozen — the picker takes several at once,
-and a drop or a paste can carry a folder's worth — and the left column keeps them
-with the one on the wall marked, switchable, and removable. The wall is always
-one of them; removing the last one returns the app to the bare wall it boots on.
+## Features
 
-Styles are a rack of previews under the wall: each chip is a small render of the
-poster that style would make of the photograph in hand, so the mat, the backdrop
-and the canvas shape are all visible before you pick one.
+### Styles
 
-Words are optional and typed: the 文字 panel offers exactly the slots the chosen
-style prints — 经典 takes a title and a subtitle, 拍立得 and 样张 a title in the
-mat, 留白 none at all — and what you type follows you from style to style. Each
-slot's type is yours too: its face (a list of the machine's own hands, or a font
-file you load), its size, and where the block sits on the poster. The camera
-plate needs no typing: it is read from the active photograph's own EXIF.
+- Nine built-in styles: Classic (经典), Polaroid (拍立得), Magazine Cover (杂志封面), Cinematic (电影感), Postcard (明信片), Minimal (留白), Social Square (社媒方形), Story (竖版故事), and Spec Sheet (样张).
+- Five canvas ratios — 4:5, 16:9, 3:2, 1:1, and 9:16. Every style chip is a real render of the current photo, so the mat, backdrop, and canvas shape are visible before you choose.
+- Save the current adjustments as a template (存为模板), stored locally and available later as a custom style.
 
-The mount's own geometry is adjustable too. 画面 offers one slider per number the
-current template can change: 前景大小, 水平位置/垂直位置, 圆角, 白边/下白边, and,
-where there is a photograph behind the frame, 后景放大 / 后景虚化 / 后景压暗.
-(无背景 delivers the mount's own box, so it offers the three numbers that change the
-card and nothing else — see below.) 存为模板 keeps the numbers you set, so a look
-you tuned is a style you can pick again. The sliders cannot be driven
-into a poster the renderer would crop: every maximum is the layout's own ceiling,
-computed in `src/core/limits.ts`. Nothing you change there is saved until you
-press 存为模板; the note beside the heading says 已调整 until you do, and 重置
-beside it is how the numbers as authored come back.
+### Photos
 
-A refresh comes back to where you left off. The photographs, the one that was on
-the wall, the mount, the words and the numbers are all written as you work, so a
-stray ⌘R, a crash, or a phone that reclaims the tab costs nothing. The original
-files are stored, not a re-encode of them, so a restored photograph still knows
-its own EXIF.
+- Import several photos at once, or by drag-and-drop and paste.
+- Switch or delete from the photo list; deleting also removes the locally stored original.
+- The working session is saved automatically; photos, current style, text, and adjustments return after a refresh or an unexpected close.
 
-The screen is arranged the way an editor on a phone is: 保存 and the two arrows
-across the top, the poster in the middle with its own name and one line about
-what it does under it, the collections above the rack of styles, and a switch at
-the foot that shows 文字 or 画面 — one at a time. 撤销 and 重做 walk back through
-the mount, its numbers and the words; the photograph list is deliberately not in
-that history, because removing a photograph takes its bytes with it and a 撤销
-that offered to bring one back would be promising what the store no longer has.
+### Text and camera plate
 
-Photos never leave the device. There is no backend.
+- Only the slots the current style prints are shown: Classic has title and subtitle, Polaroid and Spec Sheet each have one title slot, and Minimal shows no text panel.
+- Typed text follows the user across styles.
+- Each slot has its own font and size; the block has an anchor (top / mat / center / bottom) and a percentage nudge.
+- Fonts include machine presets — 楷体 (Kaiti), 宋体 (Songti), 行楷 (Xingkai), 手写体 (handwriting), 圆体 (rounded), 隶书 (Lishu), plus several Latin script faces — and your own `.ttf` / `.otf` / `.woff` / `.woff2` files.
+- Spec Sheet reads the photo's EXIF and prints a camera plate: camera and exposure on two lines, one line when the data is incomplete, and nothing when there is no metadata.
 
-## Develop
+### Mount adjustments
+
+- Foreground size, horizontal/vertical position, corner radius, mat/bottom mat, and backdrop zoom, blur, and darkening.
+- Slider ceilings are derived from the layout geometry, so dragging to the maximum never crops the image.
+- In No Background mode only the three card-related controls remain: radius, mat, and bottom mat.
+- Reset to the style's authored values, undo, and redo. History covers mount adjustments and text; the photo list is deliberately excluded.
+
+### Background and border
+
+- **With Background** (带背景): the photo's own blurred copy fills the backdrop; output uses the template canvas.
+- **No Background** (无背景): only the mount itself is written — a smaller file with a cleaner edge.
+- In No Background, the border material can be **White** (白边) or **Blur** (模糊, the photo's own blur extending past the frame).
+
+### Export and experience
+
+- PNG export. Save requests 2× by default (about 2304×2880 for a 4:5 canvas) and steps down automatically when the canvas limit is exceeded.
+- Three-column desktop layout and a single-screen mobile layout; the light/dark theme follows the system and can be toggled manually. The mat stays white in both themes.
+- Pure frontend: no account, no backend, no uploads.
+
+## Development
+
+Requires Node.js 20+.
 
 ```bash
 npm install
-npx playwright install chromium
+npx playwright install chromium   # required the first time for browser tests
 npm run dev
 ```
 
-## Verify
+Stack: TypeScript + Vite, plain DOM and Canvas 2D, no frontend framework.
+
+### Common commands
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the dev server |
+| `npm run build` | Type-check and produce a static build in `dist/` |
+| `npm run test` | Node unit tests for pure functions and layout rules |
+| `npm run test:pixel` | Playwright browser tests: layout relationships, canvas invariants, pixel goldens |
+
+Full gate:
 
 ```bash
-npm run test        # unit — pure functions in node, fast
-npm run test:pixel  # browser — canvas geometry, pixel invariants, the goldens
-npm run build       # tsc --noEmit + production bundle
+npm run build && npm run test && npm run test:pixel
 ```
 
-The full gate is `npm run build && npm run test && npm run test:pixel`.
-`test:pixel` builds the app and serves `dist/` on :4173 itself, so it fails when
-the production build fails — run it with nothing else holding that port.
+`test:pixel` builds the app and serves `dist/` on `:4173` itself, so free the port before running it.
 
-## Deploy
-
-The build is static. `npm run build`, then serve `dist/` from any host. It must
-be served over HTTP — ES modules do not load from `file://`.
-
-## Dev affordances
-
-| Query | Effect |
-|---|---|
-| `?dev=1` | Exposes `window.__frame` (the probe canvas, and `photo()` — the photograph the app is holding), `__frameCore`, `__frameTemplates`, `__frameFonts`, `__frameCeremony`, `__frameExport` for tests and console poking |
-| `?demo=1` | Loads a procedurally generated photograph into the app — no file needed to try it. A sandbox: it neither reads nor writes the session, so a reload is always the same one-photograph demo and a real session in the same browser is never touched |
-| `?demo=1&tpl=spec-sheet` | The demo photo with a named template; `?tpl` is read only alongside `?demo=1` |
-
-## Layout
-
-Two arrangements, one app. On a desk the shell is three columns in a grid: the
-photographs on the left, the wall with the rack of styles under it in the middle,
-and the actions and 画面 on the right — 保存 at the top of that column with the two
-arrows beside it, and the panel switch under it. On a phone the same things arrive
-as a stack: a bar across the top (照片 and its count, the arrows, 保存), the
-poster, its caption, the collections, the rack, then the switch at the foot with
-the open panel above it. The stack fits one screen (`height: 100dvh`, no page
-scroll), because a switch that has to be scrolled to is a switch nobody finds.
-The photograph list is the left column on a desk and a sheet behind the 照片
-button on a phone — with the bare wall carrying its own 添加照片, since a way in
-that lives behind a button is no way in for someone who has never used the app.
-
-`tests/pixel/layout.spec.ts` asserts those relationships as geometry — left of,
-below, corner of — rather than as a screenshot, so they hold at any window size.
-
-`src/core/` is framework-free and **never imports from `src/ui/`**. That
-boundary is what keeps the canvas math testable, and it is the one architectural
-rule in this codebase.
-
-Each panel is a pure model with a dumb DOM half beside it, and the model is where
-the rules live:
-
-| module | the model | the DOM |
-|---|---|---|
-| `src/ui/photos.ts` | `addPhotos` / `removePhoto` / `selectPhoto` / `activePhoto` — which photograph is on, after any mutation | the list rows |
-| `src/ui/rail.ts` | `styleThumb` — the preview of a style | the rack of chips |
-| `src/ui/fields.ts` | `wordsPanel` — the slots, their faces and sizes, and the ceilings | the 文字 panel |
-| `src/ui/controls.ts` | `controlSpecs` / `setControl` / `settleTemplate` — the whole write path, clamped; `setBackgroundMode` — 背景; `setMatBlur` / `matFillPanel` — 白边's surface | the sliders |
-| `src/ui/modebar.ts` | `modeBar` / `renderModeBar` / `syncModeBar` — the two poster previews and 白边's two discs, built once and only ever synced; `blurDisc` — 模糊's own bitmap | the bar under the poster |
-| `src/ui/fonts.ts` | `stackOf` / `FONT_CHOICES` (in `src/core/fonts.ts`) — what a face *is* | the picker, and `FontFace` |
-| `src/ui/tabs.ts` | `tabsFor` / `inTab` / `filterRail` — which styles a collection holds | the row of collection names |
-| `src/ui/modes.ts` | `modeFor` — which panel a template can show | the switch |
-| `src/ui/history.ts` | `remember` / `undo` / `redo` — the stack and the burst rule | the two arrows |
-
-That split is the reason `tests/unit/` can answer for the arithmetic (index
-shifts on deletion, slider ceilings, preview keys) in `node`, and why the browser
-suites are only about what reaches the wall.
-
-## The style previews
-
-A chip is a render, not a crop: `styleThumb` calls the same `render` the wall
-does, at the poster's own logical size and at `k = chip / longEdge`. Every
-absolute measure in the renderer is absolute in `k` — the mat, the radius, the
-shadow, the blur, the type — so one small `k` produces *the same poster*,
-smaller, with no second layout path and nothing re-tuned per size. The chip's box
-is the canvas ratio at that scale, so the rack says which styles are wide, tall
-or square before anything is loaded.
-
-Previews are memoised on everything that can change one (the template's geometry,
-the photography, the box) and capped at sixty, because a session that loads
-photographs and drags sliders would otherwise hold a bitmap for every combination
-it passed through. The words are **not** in a preview: they belong to the user
-rather than to the style, and re-rendering ten posters per keystroke would be the
-cost of a claim nobody made.
-
-## The spec plate
-
-The plate is the product's differentiator — the app reads what the camera wrote,
-so the user types nothing — and it is a caption rather than a row of values: the
-model's name on its own line, the exposure in smaller type under it, inset from
-the band's left wall. That is a camera's own watermark, and it is why
-`src/core/plate.ts` reads its fields as *data* (`plateValues`) rather than as a
-list of strings: where the line break goes is a decision about which field means
-what, and a list of values has already thrown that away.
-
-Two lines only when there is something for both. A photograph whose EXIF carries
-an exposure and no camera — what a phone upload usually looks like — draws one
-line, and a band too shallow to hold two (`head + 1.9·detail`) gets one line at
-the smaller size rather than two rows printed over each other and over the mat's
-edge. `tests/pixel/plate.spec.ts` pins all three, plus the original rule: no
-metadata, no plate, and never a blank band.
-
-## What the reference editor gave this app
-
-The arrangement — the bar across the top, the poster with its caption, the
-collections, the rack, and the switch at the foot that shows one panel at a time
-— comes from a camera app's own editor, which is where a poster is made on a
-phone and therefore a fair model for one made here. What did not come across is
-its *skin*: the palette, the rounded cards and the accent colour are that
-product's, and this app has its own (the design sheet's ink, beige and brass, in
-the two themes `tokens.css` defines).
-
-Three things in it were deliberately not taken:
-
-- **取消**, because there is nothing to cancel. This app is not a modal session —
-  a poster is saved by 保存 and a visit is left by leaving. The slot it would have
-  taken in the bar holds 照片 instead, which is where the photograph list has to
-  live when there is no column for it.
-- **The settings button in the middle of the selected card.** The gesture is real
-  here — pressing the chip that is on opens 画面, and the knob drawn in the middle
-  of that chip says so — but it is not a second control: a button inside the chip
-  would be a button inside a button, so the chip's own click is the control and
-  the knob is its mark.
-- **The brand mark** on the caption band, which is somebody's logo. The user's own
-  `sign` slot is the honest occupant of that corner, and no built-in declares one
-  yet (see below).
-
-`撤销` and `重做` are the one *feature* in the reference rather than a piece of
-layout, and the session record made them nearly free: a step is a snapshot of the
-same two blocks the record already holds — the mount and the words — and a burst
-of edits to one field is one step (700 ms, `COALESCE_MS`). The photograph list is
-not in the stack: removing a photograph drops its bytes, and offering to bring one
-back would be promising what the store no longer has.
-
-## 文字 — the words, their type, and where they sit
-
-One block per slot the template declares — the rule has not changed and should
-not: a field for a slot nothing draws is a control that accepts typing and
-changes nothing. Each block is the slot's *content*, its *face*, and its *size*,
-and above them all is the block's *position*: an anchor (顶部 / 白边 / 居中 /
-底部, with 白边 offered only where there is a band for it) and a nudge in percent
-of the canvas. The words move together, the way a paragraph does.
-
-Everything here writes the **template record**, which is what makes it one design
-rather than three features: 已调整 appears, 重置 goes back to the style as
-authored, 撤销 walks back through it, 存为模板 keeps it, and a refresh brings it
-back. The words themselves stay in `state.text`, where they have always been —
-the template chooses the typography, the user chooses the words, and 拍立得's
-handwriting face is a default rather than a lock.
-
-The sliders are bounded by `src/core/limits.ts`, from the same `textSpan` /
-`blockTop` / `textBoxHeight` the renderer lays the block out with:
-
-- **size** — each line may grow until the block, scaled *uniformly*, would fill
-  the room its anchor leaves. Uniform on purpose: a ceiling solved per slot
-  against the others would move whenever a *different* slider moved.
-- **nudge** — until the block's own box meets a canvas edge. Horizontally that is
-  only ±7%: a line is fitted to 86% of the canvas, so there is not much else to
-  move into. A poster whose words are halfway off it is not a poster.
-
-The block's box — the first line's ascent, the baselines, the last line's descent
-— is what the room is measured against, and not the baseline-to-baseline span: a
-span is zero for a single line, and a single line half the canvas tall on a 150px
-band is exactly the case a ceiling exists for.
-
-## The fonts
-
-Faces come from two places, both optional and neither downloading anything on
-its own:
-
-- **The presets** (`src/core/fonts.ts`) are already on the machine — 楷体, 宋体,
-  行楷, 手写体, 圆体, 隶书, and the Latin scripts (Snell Roundhand, Savoye,
-  Zapfino, Copperplate). Each carries a stack that ends in the app's own sans, so
-  a template opened on a machine that has none of them prints the words in this
-  app's face rather than in whatever `cursive` means there. A record stores an
-  **id**, never a CSS string: a stack in a stored record is a font nobody can
-  rename, retarget or list.
-- **Your own**, loaded from a file (`.ttf` / `.otf` / `.woff` / `.woff2`) with the
-  ＋ on the slot you want it for. The bytes go into the same IndexedDB database as
-  the photographs — the only place this app has to put bytes — and the face is
-  registered again on the next visit, so a poster set in a font you brought comes
-  back in it. The name is the file's stem: a browser cannot read a font's internal
-  family name without parsing the file, and the name you can recognise is the one
-  you typed.
-
-`FontFace` and the store are `src/ui/fonts.ts`; the id → stack table is
-`src/core/fonts.ts`, because `drawText` needs it and `src/core/` never imports
-from `src/ui/`.
-
-**A canvas never asks for a face.** It draws with whatever is in
-`document.fonts` at that instant, and it does not re-render itself when a font
-lands — so the app asks on its behalf (`resolveFonts` in `main.ts`: one
-`document.fonts.load` per face the poster can use, then a redraw). Without that,
-a session restored off the record was *drawn before the browser had fetched the
-app's own woff2 faces* and stayed in the fallback: the plate and the words came
-out in Menlo, and an export taken straight after a refresh kept it. The bug was
-always there; a poster whose type is now a feature made it worth finding.
-
-## 白边 — paper, or the photograph
-
-In 无背景 the border is the whole background the poster has, so the bar under the
-poster reveals — with a transition, the one animated thing in this app — two discs:
-
-| | the border is |
-|---|---|
-| 白边 | the mat, white — what every template ships with |
-| 模糊 | the photograph itself, blurred, bleeding past its own frame |
-
-They are circles, and that is not decoration: a disc shows one material, and the
-border is one material. 白边's is `--mat`, the mount's own white in both themes
-rather than a colour the app happened to pick; 模糊's is a 96px render of *this*
-photograph, blurred, drawn once per photograph and kept (`blurDisc`).
-
-The blurred border is drawn as a *cover-crop of the picture into the card* — so what
-shows in the border is the part of the photograph just outside the frame, which is
-what makes it read as the picture running past its edge rather than as a frame with a
-colour in it — then clipped to the card's rounded shape. It is padded as well as
-clipped, for the reason the backdrop is: a blur pulls colour in from beyond the rect
-it is given, and a card-sized bitmap blurred by a border-sized amount has its outer
-edge fading into transparency, which composites with the white underneath and leaves
-a pale rim where the border should be.
-
-The blur amount comes from the border's own width (`blurWidth`: 0.8× the widest
-side, floor 12) rather than from a slider of its own. The record has one number for
-a border and it is the width; the wider it is, the more the blur has to hide. A 16px
-mat gets the picture, softened; a 104px band gets a colour the picture is made of.
-
-Two rules about where it is offered:
-
-- **Only in 无背景.** On 带背景's blurred backdrop the same blur is a border nobody
-  can see — the failure this row refuses everywhere else. The discs are *present but
-  closed* on 带背景 rather than absent, because the row is a transition's two states
-  and an element rebuilt on the way in would have nothing to animate from; the same
-  reason `renderModeBar` builds the bar once and `syncModeBar` only ever updates it.
-- **Only where there is a border to fill.** With 白边 at 0 the discs are drawn
-  *disabled* rather than removed, and `syncMatDiscs` turns them live from the slider's
-  own write path: raising 白边 from 0 is a drag, and a row rebuilt under a drag loses
-  the pointer.
-
-`frame.matBlur` is a record field like any other — 已调整, 重置, 撤销, 存为模板, and a
-refresh all see it — and it survives a trip through 带背景, where the row is closed
-and the flag simply waits.
-
-
-Five things are kept on the device. Three are `localStorage` keys, and two live
-in one IndexedDB database; all of them are per-origin, and none of them is a
-server's.
-
-| what | where | kept in `src/` |
-|---|---|---|
-| the theme | `localStorage` `frame-app-theme` | the head script in `index.html`, `src/ui/theme.ts` |
-| saved templates (存为模板) | `localStorage` `frame-app-custom-v1` | `src/ui/custom.ts` |
-| the session: the photographs, which one is on the wall, the mount, the words, the numbers | `localStorage` `frame-app-session-v1` | `src/ui/session.ts` |
-| the photographs' own bytes | IndexedDB `frame-app-photos` (store `photos`) | `src/ui/session.ts` |
-| the fonts you loaded | IndexedDB `frame-app-photos` (store `fonts`, keyed by name) | `src/ui/session.ts`, `src/ui/fonts.ts` |
-
-The session is two stores because it holds two sizes of thing: the *record* is a
-few hundred bytes of JSON, read synchronously before the first paint so the app
-comes up wearing the mount the user left it on; the *bytes* are tens of megabytes
-and have to be read back and decoded off the event loop, so the wall is bare for
-a moment and then filled in. The record is what knows the list's order, and
-`active` is an index into it, so the record's `photos` is always one entry per
-photograph in the list — an entry with no key is a photograph with no bytes
-behind it, either one whose store is still in flight or one the caps evicted.
-
-The caps are `MAX_PHOTOS` (24) and `MAX_BYTES` (256 MB), and past either one the
-oldest photographs stop coming back — oldest first, because the list is
-append-only and what has been there longest is what the user has already looked
-at. The record is written on every edit (a keystroke, a slider tick, a pick, a
-photograph added or removed) rather than on a debounce, because a record that
-lags by one edit restores the wrong poster, and a few hundred bytes of JSON is
-not worth a timer.
-
-Every path degrades rather than throwing: a refused IndexedDB, a quota that
-refuses a write, a record an older build wrote, a blob that will not decode. A
-session that cannot be restored is a fresh session, which is where the app
-started anyway.
-
-## Pixel snapshots
-
-`tests/pixel/__screenshots__/` holds **nine** goldens — one per built-in
-template (`<id>-light.rgba`), not one per template per theme. The dark leg of
-`tests/pixel/templates.spec.ts` is asserted against the *light* golden: `--mat`
-is `#FFFFFF` in both themes and every colour `render` paints is a literal or a
-template field, so a byte-identical render while the media query says dark is
-the cross-theme assertion. A theme-dependent renderer cannot be re-baselined
-out of it — both legs compare to the same file, so whichever render
-`--update-snapshots` writes, the other leg is red on the next run.
-
-A red golden is a question, not a verdict. Either the renderer changed by
-accident — fix `src/` and keep the golden — or you meant the change. Only then:
+Pixel goldens live in `tests/pixel/__screenshots__/` — one per built-in template, rendered in the light theme (the mat is white in both themes, so the same golden also asserts dark mode). Update them only after confirming an intended visual change, and commit the new goldens with the code change:
 
 ```bash
 npx playwright test tests/pixel/templates.spec.ts --update-snapshots
 ```
 
-Re-baseline and commit the new goldens in the same change as the template edit.
-The mismatching render is left under `test-results/`.
+## Project structure
 
-The suite runs in Chromium (Playwright's default, no `projects`). Text metrics
-differ in other engines, so the goldens are Chromium's rendering.
+- `src/core/` — framework-free pure logic: rendering, geometry, templates, EXIF, text, and size ceilings. **Must not import from `src/ui/`**, which keeps the core math testable directly in Node.
+- `src/ui/` — panels, state, history, persistence, and export. Each panel is a pure model plus a thin DOM layer.
+- `src/main.ts` — app wiring and event binding; `index.html` is the shell.
+- `tests/unit/` — pure functions and rules; `tests/pixel/` — real-browser layout, pixel invariants, and goldens.
 
-Maintainer note: the mat fit-guard in `tests/unit/templates.test.ts` lays every
-template out at 1152×1440 — `resolveSize(ratio, 1440)`, the default of
-`state.longEdge`, hardcoded in the test rather than read from the app. Nothing
-writes `longEdge` today, so the two agree; give it a writer (a size picker) and
-the guard goes on checking 1440 until you change it by hand. The style previews
-read it too: their scale is `chip / longEdge`, so a longer edge is a sharper
-chip and a slower rail.
+## Data and privacy
 
-## The 画面 panel
+Data lives only in the browser:
 
-`src/ui/controls.ts` describes the panel as data — `controlSpecs(template,
-context)` returns one `ControlSpec` per slider, with the value it holds and the
-range it may be dragged over — and `setControl` is the whole write path: one
-value, clamped, on a copy of the record. Both are pure, which is why the whole
-of the panel is testable in `node` (`tests/unit/controls.test.ts` sweeps every
-control on every built-in across its range) and why the DOM half is dumb enough
-to have nothing in it to test.
+- `localStorage`: theme, custom templates, and the session record (photo list, active photo, mount, text).
+- `IndexedDB`: original photo bytes and uploaded fonts.
 
-The ceilings are not round numbers and they are not the panel's own opinion:
-`src/core/limits.ts` derives them from the arithmetic in `fitRect` and `matRect`,
-so a slider's maximum is the largest value that still lays the mat inside the
-canvas. `tests/unit/limits.test.ts` keeps the closed forms honest by laying
-posters out with the same two functions `render` calls. Two rules follow from
-that, and both are load-bearing:
+Persistence is capped at 24 photos or 256 MB, oldest evicted first. When storage is refused, the quota is exceeded, or a record is corrupt, the app degrades rather than breaking; a session that cannot be restored starts fresh. There is no backend and no upload.
 
-- Raising one control never moves another *except* the offsets, which have less
-  room as the photograph grows — so a write settles the frame afterwards rather
-  than clamping only what the user touched.
-- 后景 is not offered where there is no 后景. 无背景 draws nothing behind the
-  photograph at all — and 样张 ships as one — so a 后景虚化 slider in it would accept
-  a drag and change nothing, which is the failure 文字 already refuses for 留白.
+## Deploy
 
-**圆角 is 有无与大小 in one row.** The slider runs 0 to half the frame's shorter side
-— `radiusCeiling`, which is where `roundedRect` stops responding — and its readout
-says 「无」 at zero rather than 「0px」, because zero here is a *state* and not a
-measurement: a poster with square corners is a poster with no radius, and a number
-sitting where a word belongs is the sort of thing this panel does not do. It is
-offered in both modes, and in 无背景 it is one of only three rows that are, because
-the radius changes the card — and in that mode the card is the file.
+`npm run build` produces a static site; serve `dist/` from any static host. It must be served over HTTP — ES modules do not load from `file://`. The repo ships a GitHub Pages workflow that builds and deploys on pushes to `main`; for a project site under a subpath, set Vite's `base` via `PAGES_BASE`.
 
-## 背景 — two posters
+## Dev affordances
 
-Under the poster, as previews of the poster itself, is the one choice that is not a
-number — and it is really a choice about *what the poster is*, which decides both
-what is drawn and how big the file is:
+| Query | Effect |
+| --- | --- |
+| `?dev=1` | Exposes debug handles such as `window.__frame` for tests and console inspection |
+| `?demo=1` | Loads a procedurally generated sample photo without reading or writing the real session; a reload is always the same photo |
+| `?demo=1&tpl=<id>` | The sample photo with a named template; `tpl` is read only alongside `demo=1` |
 
-| | what it is | what it delivers |
-|---|---|---|
-| 带背景 | the photograph again, cover-cropped and out of focus, on a canvas of the template's own shape | 1152×1440 for a 4:5 template at this long edge |
-| 无背景 | no canvas to speak of: the poster is the mount — the photograph and its border | **the mount's own box**: a 1000×1000 poster whose photograph and border measure 800×800 is written at 800×800 |
+## Known limitations and unbuilt work
 
-**Why pictures, and why down there.** The two differ in size before they differ in
-anything else, and only a preview can say so: both thumbnails are rendered, through
-the same `styleThumb` the rack uses, at the size the file will be written at, into
-one fixed box — so 无背景's is simply *smaller*, and the difference you see is the
-difference you get. The panel keeps the numbers; this is not a number. `#control-modes`
-was words, and words cannot do that.
-
-**Where the row lives is the rest of the picture.** `src/ui/modebar.ts`: `modeBar` is
-the view model (two thumbs, two discs, and whether the discs are out), `renderModeBar`
-builds the DOM once, `syncModeBar` updates it. The split is not tidiness — the discs
-animate, and an element rebuilt with the transition's end state has nothing to
-transition from.
-
-The mode is a property of the record, so the choice is a record write like any
-slider's: 已调整 appears, 重置 goes back to the style as authored, 撤销 walks back
-through it, 存为模板 keeps it, and a refresh brings it back. A round trip out to
-无背景 and back clears 已调整 on its own, because the record is back where it
-started — that is the whole of what the marker means.
-
-**One function decides every size.** `outputRect` in `src/core/background.ts` (and
-`deliverySize`, its rounding wrapper in `src/ui/export.ts`) answers with the whole
-canvas for 带背景, and with `mountRect` — the frame grown by its mat, the same two
-functions `render` lays the mount out with — for 无背景. The screen canvas, the
-export, the area budget the export ladder walks, the size printed beside the rack,
-and the two previews under the poster all ask it. A preview that showed a card while
-the file carried a field around it, or a budget computed against a canvas the file is
-not going to be, is the app lying about what it is about to write.
-
-**The crop is the whole of 无背景.** `render` never changes `size`: every
-measurement still happens against the template's canvas, and the delivery is that
-canvas seen through a window that has been translated onto the card. That is why
-the mode zeroes `ox`/`oy` on the way in — a window cannot be off-centre inside
-itself — and why 无背景 offers 圆角, 白边 and 下白边 and nothing else: 前景大小 resizes
-the window and 水平位置/垂直位置 move it, so none of the three can change the poster,
-while the radius and the mat *are* the poster's border and the file grows with them.
-Wanting more pixels is the export's ladder (1×/2×/4×), not a slider.
-
-**Why two, and why 透明 is gone.** 不虚化 — the same backdrop sharp — was built and
-removed: it is still "the photograph in the background", which the row does not ask
-about. 透明 — nothing behind the photograph, on the full canvas — was also built and
-removed, and for the same shape of reason: with a second answer that keeps the canvas
-and empties it, the row is asking two questions at once ("what is behind it" and "how
-big is the file"). The two that remain answer one: 带背景 and 无背景 are the two
-*deliveries*, the canvas and the mount's own box. `background.mode` is
-`'blur' | 'mount'`, and a mode nothing can set is a branch nothing can reach.
-
-Three more things are load-bearing:
-
-- **One record has a sheet, and it is authored.** 样张 lays its photograph on
-  `#FFFFFF` (`background.color`), because its plate is printed on the card — a
-  camera plate over a punched-out background is a caption floating in the void. No
-  control writes that colour; it is part of the template the way `frame.radius` is,
-  and it survives a trip out to 带背景 and back so the card is never quietly left
-  bare. In 无背景 it shows only where the mount does not reach it — the corners of a
-  rounded card. `validateTemplate` refuses a `color` that is not `#rrggbb`, because
-  `fillStyle` *ignores* a value it cannot parse and keeps the last one.
-- **The numbers survive the switch.** `blur`, `zoom` and `darken` mean nothing to
-  无背景 — nothing is drawn there — but they are what 带背景 is made of, and
-  a user stepping out and back expects the backdrop they left, not a new one.
-- **带背景 on a flat card invents a blur.** 样张 carries none, and a 带背景 that drew
-  a sharp backdrop under its own label is a control lying about what it did. The
-  default is 40 — the middle of what the built-ins authored (28–62) — rather than
-  the maximum, which would be a look nobody chose.
-
-The panel's heading used to carry its two actions; they live in the row above both
-panels now (`#record-acts`), because they act on the whole *record* — the mount's
-numbers and the words' type — and a 重置 that disappeared with the panel you were
-not looking at would be a button that moves when you need it. 重置 puts the mount
-back to the numbers as authored — the gesture that used to be a second click on
-the chip already selected, which is now what opens this panel — and is live only
-while 已调整 is showing. 存为模板 keeps them under a name. That is also why 保存 is
-alone in the dock's top row on a desk and alone in the bar on a phone.
-
-## Known limitations
-
-**`?demo=1` no longer stores its photograph, and the copies it once did are still
-there.** The demo used to persist like any other photograph, so a reload of that
-URL restored the demo it had stored and then added a second one — the list grew
-by one per refresh, and a demo visit wrote a generated photograph into the user's
-own session. It is a sandbox now (see the dev affordances above). What that does
-not fix is the photographs it already stored: they come back on `/` until they
-are removed with the × on each row. They are not cleaned up on sight, on purpose
-— a stored photograph named `demo` is indistinguishable from a real file somebody
-named `demo`, and guessing wrong there deletes a photograph.
-
-**The list is capped where it persists, not where it lives.** Every photograph
-loaded is decoded and held in memory — 48 MB per 12 MP frame — for as long as its
-row is in the list, and there is no cap on that: a folder of forty dropped in at
-once is roughly 2 GB of bitmaps and the browser will not survive it. What *is*
-capped is what comes back after a refresh: 24 photographs or 256 MB, oldest
-evicted first. So the two limits are different numbers, and the one a user meets
-first is the browser's. A photograph whose bytes were evicted stays in the list —
-it is the user's, and the wall can still draw it — and is simply not there after
-the next reload, which is what the one-off 存储已满 toast is about. Restoring a
-full session re-decodes every photograph in it, so a slow device shows a bare wall
-for a second or two before the list fills in.
-
-**The list is for switching, not for collage.** `render` draws `photos[0]` and no
-more; the other photographs are reachable through the wall one at a time. Collage
-is spec stages 5-6 and unbuilt — see below.
-
-**存为模板 saves the style, not the words.** The template record has no room for
-text values, so a saved template brings back its typography and the fields come
-up empty; `state.text` is one record for the session. Adding values to the
-record means touching `validateTemplate`, the storage blob and its versioning.
-What a saved template *does* carry is its geometry — the numbers the 画面 panel
-wrote (see above). The two are not the same problem: a style's typography and
-its measurements are the template's, while the words are the user's, and 文字's
-whole design is that they follow the user from mount to mount.
-
-**The 4× export tier is unverified on real WebKit.** 4× is what the spec (§10)
-advertises as the premium unlock, and `src/ui/export.ts` makes it deliverable by
-budgeting canvas *area* per rung (`areaBudget`) and walking a fallback ladder
-when a rung is refused. Every branch of that ladder is exercised in CI, but the
-WebKit refusal itself is **simulated**: the tests stage it by answering
-`getImageData` with zeros for any canvas over the floor. WebKit's real
-over-budget behaviour — draws that become no-ops and a `toBlob` that yields null
-— has never been observed on an actual device by this codebase. Confirm 4× on
-real iOS Safari before it is sold to anyone. (Nothing reaches 4× through the UI
-today: the save button asks for 2×, and the premium rung is reachable only
-through `__frameExport`.)
-
-**The `sign` slot stacks like the rest, and no built-in declares one.** Slots are
-laid out as a block — each line advanced from the one before it by the taller of
-the two sizes — so `title`, `sub` and `sign` each land on their own baseline
-under every anchor, and which end of the block an anchor names depends on the
-anchor (`bottom` grows upward, `top` downward). `tests/pixel/text.spec.ts` pins
-both. Only a hand-edited stored record reaches `sign`.
-
-## Not built yet
-
-Adjustments (crop, straighten, tone looks) and collage layouts are specified but
-deliberately unbuilt — the spec's stage list (§4, stages 5–6, in
-`docs/superpowers/specs/2026-10-07-photo-frame-app-design.md`) puts them after
-the shippable product, and §12's adjust-panel metric is the test of whether they
-were worth taking. The 画面 panel adjusts the *mount* — how large the photograph
-is, where it sits, how deep the mat, how the backdrop is treated — and stops
-there: nothing in this app crops, straightens or grades the photograph itself,
-and no panel value changes a pixel of the image. `layout` is carried in the data
-model and nothing reads it: `render` draws the active photograph and no more.
-
-Payments are a seam only — one boolean (`Template.premium`) and two functions in
-`src/entitlements.ts`, both answering `true` in v1, wired at two call sites in
-`src/main.ts`. Nothing is gated.
-
-**`?selftest=1` and `?pixcheck=1` are not built.** The spec (§8, "Carried over
-from the prototype") names both of the prototype's other query affordances and
-says they should be preserved; this build has `?dev=1` and `?demo=1` (see above)
-and neither of those two. `?pixcheck=1` — the one the spec argues for by name,
-because it read exported pixels back to check the mat/frame boundary and is the
-hand-rolled ancestor of the pixel suite in §11 — is superseded by
-`tests/pixel/`: the invariants there, on the `?dev=1` handles, are the same
-reads against the same boundary. Nothing replaces `?selftest=1`. Both were
-dropped in the rebuild without a record, which is what this paragraph is for.
-Neither query does anything today.
+- **Save as template does not store the words.** A template record holds layout, typography, and geometry; title and subtitle belong to the current session.
+- **The in-memory photo list has no cap.** Persistence is limited to 24 photos / 256 MB, but every loaded photo is decoded and kept in memory; importing a large batch of high-resolution photos can exhaust browser memory.
+- **4× export is unverified on real iOS Safari.** The fallback ladder is covered in CI, but WebKit's actual over-budget behavior is simulated; the Save button only requests 2×, and 4× is reachable only through the dev handle.
+- **The mount panel only adjusts the frame.** Crop, straighten, tone looks, and collage layouts are not implemented; no panel value changes a pixel of the photo itself.
+- **Payments are a seam only.** The `premium` flag and entitlements interface exist, but v1 allows everything and nothing is gated.
+- **`?selftest=1` and `?pixcheck=1` are not implemented.** The export-pixel reads of the latter are covered by `tests/pixel/`.
+- **Legacy `?demo=1` may have left photos behind.** Earlier builds persisted the demo photo into the session; those photos keep appearing in the list and must be removed one by one.
